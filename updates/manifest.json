@@ -6,8 +6,16 @@
       "sha256": "0b8a2f11aa5513f4193f15235c5c1c8f268a56cd53a142454b80880596a99ab4",
       "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.30.2/led-scoreboard-v2.30.2.zip",
       "version": "2.30.2"
+    },
+    "stable": {
+      "notes": "v2.30.2",
+      "promoted": "2026-09-20T19:33:03Z",
+      "published": "2026-09-20T19:31:56Z",
+      "sha256": "0b8a2f11aa5513f4193f15235c5c1c8f268a56cd53a142454b80880596a99ab4",
+      "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.30.2/led-scoreboard-v2.30.2.zip",
+      "version": "2.30.2"
     }
   },
-  "published": "2026-09-20T19:31:56Z",
+  "published": "2026-09-20T19:33:03Z",
   "schema": 1
 }
