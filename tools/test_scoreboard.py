@@ -605,6 +605,48 @@ def test_geometry():
           "{} -> {}".format(before, playlist.index))
 
 
+def test_no_check_depends_on_the_board_underneath():
+    """Re-run the option builder as each board model, not just this one.
+
+    Added after "slowdown omitted when unset" shipped green and failed on a
+    Pi 3. The assertion was fine on a laptop, where no profile matches and
+    nothing supplies a slowdown, and wrong on real hardware, where the profile
+    supplies 1. A suite that only ever runs on the machine that wrote it
+    cannot catch that class of thing, and the field is a bad place to.
+
+    Cheap version of the idea: exercise the hardware-sensitive path under
+    every profile the fleet actually uses, rather than re-running everything.
+    """
+    print("options under every board profile")
+    import main as main_mod
+    from data import hardware
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cfg = Config(os.path.join(tmp, "config.json"))
+        for key, profile in sorted(hardware.PROFILES.items()):
+            cfg.set("performance.profile", key)
+            try:
+                options = main_mod.matrix_options(cfg, {})
+            except Exception as exc:
+                check("{} builds options".format(key), False, str(exc))
+                continue
+            check("{} builds options".format(key), True)
+            # Whatever the profile says must survive into the options, and an
+            # opinion of None must stay absent rather than arriving as None,
+            # which the library cannot take.
+            want = profile.gpio_slowdown
+            got = options.get("gpio_slowdown", "absent")
+            check("{}: slowdown {}".format(key, want if want is not None else "absent"),
+                  got == (want if want is not None else "absent"), str(got))
+            check("{}: colour depth {}".format(key, profile.pwm_bits),
+                  options.get("pwm_bits") == profile.pwm_bits,
+                  str(options.get("pwm_bits")))
+            # And it still has to be something the library will accept.
+            checked = main_mod._sanity_check(dict(options))
+            check("{}: the result passes the sanity check".format(key),
+                  checked.get("gpio_slowdown", 0) <= main_mod.SLOWDOWN_MAX)
+
+
 def test_matrix_options():
     print("matrix options")
     import main as main_mod
@@ -621,8 +663,39 @@ def test_matrix_options():
         check("config drives pwm bits", options["pwm_bits"] == 8)
         check("display brightness is used when matrix has none",
               options["brightness"] == 55)
-        check("slowdown omitted when unset", "gpio_slowdown" not in options)
+        # The profile is pinned rather than left to whatever board is running
+        # the suite, and that is the whole lesson of this check.
+        #
+        # It used to read "slowdown omitted when unset" against the detected
+        # board. On a laptop no profile matches, nothing supplies a slowdown,
+        # and it passed. On a Pi 3 the profile supplies 1, so it failed -- and
+        # it failed only after v2.28 made profiles actually reach the matrix,
+        # which was the point of that change. A test whose answer depends on
+        # the hardware under it is green on the dev box and red in the field,
+        # which is the worst place to find out.
+        from data import hardware
 
+        cfg.set("performance.profile", "generic")
+        options = main_mod.matrix_options(cfg, {})
+        check("slowdown omitted when neither config nor profile has an opinion",
+              "gpio_slowdown" not in options,
+              str(options.get("gpio_slowdown", "absent")))
+
+        cfg.set("performance.profile", "zero_w")
+        options = main_mod.matrix_options(cfg, {})
+        check("the board profile supplies it when it has one",
+              options.get("gpio_slowdown")
+              == hardware.PROFILES["zero_w"].gpio_slowdown,
+              str(options.get("gpio_slowdown")))
+
+        cfg.set("performance.profile", "pi3")
+        options = main_mod.matrix_options(cfg, {})
+        check("and a different board gets a different answer",
+              options.get("gpio_slowdown")
+              == hardware.PROFILES["pi3"].gpio_slowdown,
+              str(options.get("gpio_slowdown")))
+
+        cfg.set("performance.profile", "auto")
         options = main_mod.matrix_options(cfg, {"chain_length": 4,
                                                 "gpio_slowdown": 0})
         check("CLI overrides config", options["chain_length"] == 4)
@@ -809,6 +882,16 @@ def test_web():
 
 
 def main():
+    # Printed first because a failure that only happens on one kind of board is
+    # the hardest sort to read a log about. Now the log says which board it was.
+    try:
+        from data import hardware
+        from data.config import Config as _Cfg
+        board = hardware.board_for(_Cfg())
+        print("running on: {}".format(board.describe()))
+    except Exception as exc:
+        print("running on: could not detect the board ({})".format(exc))
+
     test_parser()
     test_config()
     test_playlist()
@@ -820,6 +903,7 @@ def main():
     test_odds_row()
     test_geometry()
     test_matrix_options()
+    test_no_check_depends_on_the_board_underneath()
     test_identity()
     test_geocode()
     test_web()
@@ -832,6 +916,8 @@ def main():
     test_privilege_drop_readability()
     test_audio_conflict()
     test_apt_resilience()
+    test_unreadable_override_falls_through_instead_of_giving_up()
+    test_hand_picked_override_is_trusted()
     test_release_channel_can_be_preseeded_onto_a_card()
     test_release_signature_round_trip()
     test_selfupdate_refuses_before_it_reaches_the_network()
@@ -1561,6 +1647,119 @@ def test_apt_resilience():
           "key-joeisanerd" not in src)
     check("the sources entry is not written when the key step failed",
           "could not add the Comitup repository" in src)
+
+
+def test_unreadable_override_falls_through_instead_of_giving_up():
+    """Bad shipped art must not be the end of the line.
+
+    Override art is tried first and short circuits everything after it, so one
+    unusable file meant the abbreviation -- even with a perfectly good
+    alternative in the same folder.
+
+    Carolina is the case that showed it, and it is worth naming because the
+    numbers are not close. The shipped CAR.png is the prowling panther: a black
+    cat with a thin blue keyline. At 20px on an unlit panel that is 8% lit and
+    1% solid, a scatter of dim blue dots. It failed the legibility gate and the
+    board drew "CAR" as text, while CARH.png -- the silver helmet -- sat beside
+    it at 45% and 45%. Nothing ever looked at it, because the first source
+    winning was indistinguishable from the first source being the only one.
+    """
+    print("unreadable override falls through")
+    from PIL import Image
+    from data import logos
+
+    logos.clear_memory()
+    got = logos.get("CAR", url="", size=20, helmet=False, league="nfl")
+    check("Carolina resolves to a mark rather than text", got is not None)
+    if got is not None:
+        check("and the mark it found actually reads", logos.legible(got),
+              "{:.0f}% lit".format(100 * logos.visibility(got)))
+
+    # The thing it should NOT have settled for.
+    primary = logos._prepare(Image.open(
+        os.path.join(root_dir(), "logos", "CAR.png")), 20)
+    check("the shipped primary really is unreadable, not just dim",
+          not logos.legible(primary),
+          "{:.0f}% lit, {:.0f}% solid".format(
+              100 * logos.visibility(primary), 100 * logos.readability(primary)))
+
+    # Teams whose art is fine must be untouched by any of this.
+    for abbr in ("GB", "DAL", "BAL", "CIN", "NE"):
+        logos.clear_memory()
+        check("{} still resolves".format(abbr),
+              logos.get(abbr, url="", size=20, helmet=False,
+                        league="nfl") is not None)
+
+    # The fallback must terminate. It re-enters get() for the ESPN attempt,
+    # and a version of this that recursed would hang the board rather than
+    # fail a test, so it is worth pinning.
+    logos.clear_memory()
+    import threading
+    done = []
+    thread = threading.Thread(
+        target=lambda: done.append(
+            logos.get("CAR", url="", size=20, helmet=False, league="nfl")))
+    thread.daemon = True
+    thread.start()
+    thread.join(20)
+    check("the fallback chain terminates", not thread.is_alive())
+
+
+def test_hand_picked_override_is_trusted():
+    """A logo_tune pick is a decision, not a suggestion.
+
+    Panel-sized override art exists because somebody ran the tuner, looked at a
+    contact sheet of every treatment, and chose one. Measuring that choice and
+    overriding it would defeat the whole purpose of the tool -- and the case
+    where it bites is exactly the case the tool is for: a mark that is dim by
+    nature, which the owner decided they would rather see than four letters.
+    """
+    print("hand-picked override is trusted")
+    from PIL import Image
+    from data import logos
+
+    folder = os.path.join(logos.OVERRIDE_DIR, "ncaaf")
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "ZZT.png")
+    made = not os.path.exists(path)
+    try:
+        # Deliberately dim: 20x20, well under the legibility gate.
+        dim = Image.new("RGB", (20, 20), (0, 0, 0))
+        for i in range(8):
+            dim.putpixel((i, i), (90, 90, 90))
+        dim.save(path)
+
+        logos.clear_memory()
+        got = logos.get("ZZT", url="", size=20, helmet=False, league="ncaaf")
+        check("a panel-sized override is used even though it is dim",
+              got is not None)
+        # Measured the way this path actually uses it: verbatim, with no
+        # _prepare. Running it through _prepare would crop to the drawn
+        # diagonal and scale that up, which makes a sparse image look dense
+        # and would have tested the wrong thing entirely.
+        verbatim = Image.open(path).convert("RGB")
+        check("it fails the gate that would have rejected any other source",
+              not logos.legible(verbatim),
+              "{:.0f}% lit".format(100 * logos.visibility(verbatim)))
+
+        # And the contrast: the same picture at source size is shipped art,
+        # not a decision, so it gets measured and dropped.
+        big = Image.new("RGB", (400, 400), (0, 0, 0))
+        for i in range(160):
+            big.putpixel((i, i), (90, 90, 90))
+        big.save(path)
+        logos.clear_memory()
+        check("the same image at source size is measured and rejected",
+              logos.get("ZZT", url="", size=20, helmet=False,
+                        league="ncaaf") is None)
+    finally:
+        if made and os.path.exists(path):
+            os.remove(path)
+        logos.clear_memory()
+
+    src = open(os.path.join(root_dir(), "data", "logos.py")).read()
+    check("the trust rule is keyed on panel size, not on a filename list",
+          "hand_picked" in src and "raw.size == (size, size)" in src)
 
 
 def test_release_channel_can_be_preseeded_onto_a_card():

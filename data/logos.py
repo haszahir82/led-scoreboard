@@ -346,10 +346,12 @@ def get(abbr: str, url: str = "", size: int = 20, helmet: bool = False,
 
     img = None
     override = _override_path(abbr, helmet, league) if league else None
+    hand_picked = False
     if override:
         try:
             raw = Image.open(override)
             if raw.size == (size, size):
+                hand_picked = True
                 # Already drawn at panel size: use it exactly as it is.
                 #
                 # Running it through _prepare would apply the saturation,
@@ -421,8 +423,28 @@ def get(abbr: str, url: str = "", size: int = 20, helmet: bool = False,
 
     # A mark too dark or too sparse to read is worse than no mark: the caller
     # draws the team abbreviation in team colour instead, which always reads.
+    #
+    # The important word is "next", not "no". This gate used to be the end of
+    # the line, and because shipped override art is tried first and short
+    # circuits everything after it, one bad file meant the abbreviation --
+    # even when a perfectly good alternative was sitting in the same folder.
+    #
+    # Carolina is the case that showed it. The shipped CAR.png is the prowling
+    # panther: a black cat with a thin blue keyline, which at 20px on an unlit
+    # panel is 8% lit and 1% solid, a scatter of dim blue dots. It failed the
+    # gate, so the board drew "CAR" -- while CARH.png, the silver helmet, sat
+    # right beside it measuring 45% and 45%. Nothing ever looked at it.
+    #
+    # So a source that fails is a reason to try the next source, not a reason
+    # to give up. Text is still the last resort, just no longer the second one.
     if img is not None and require_legible and not legible(img):
-        img = None
+        if hand_picked:
+            # Panel-sized override art comes from logo_tune, which means a
+            # person looked at a contact sheet and chose this one. Measuring
+            # it and overriding them defeats the point of the tool.
+            pass
+        else:
+            img = _fallback_art(abbr, url, size, helmet, league)
 
     if img is None:
         with _lock:
@@ -435,6 +457,47 @@ def get(abbr: str, url: str = "", size: int = 20, helmet: bool = False,
     with _lock:
         _memory[key] = img
     return img
+
+
+def _fallback_art(abbr, url, size, helmet, league):
+    """The next thing to try when the preferred source will not read.
+
+    Ordered by how much it is still the team's own mark. ESPN's artwork first,
+    because that is the real logo and the variant measurement in get() may pick
+    a redraw that works. The bundled helmet last, because a helmet is a
+    different picture from a logo -- recognisably the right team, but not the
+    thing that was asked for, so it is a substitute rather than a preference.
+
+    Returns None when nothing reads, and then the caller draws the
+    abbreviation, which always does.
+    """
+    for candidate in _fallback_sources(abbr, url, size, helmet, league):
+        if candidate is not None and legible(candidate):
+            return candidate
+    return None
+
+
+def _fallback_sources(abbr, url, size, helmet, league):
+    """Each alternative source, loaded lazily so a miss costs nothing."""
+    # ESPN, through the ordinary path, which includes choosing between the
+    # true-colour asset and the dark redraw by measuring both.
+    if url:
+        try:
+            yield get(abbr, url=url, size=size, helmet=helmet, league="",
+                      require_legible=False)
+        except Exception:
+            yield None
+
+    # The bundled helmet, for a league that has them.
+    if not helmet and league:
+        path = _override_path(abbr, True, league)
+        if path:
+            try:
+                raw = Image.open(path)
+                yield (raw.convert("RGB") if raw.size == (size, size)
+                       else _prepare(raw, size))
+            except Exception:
+                yield None
 
 
 def prefetch(games, size: int = 20, helmet: bool = False):

@@ -612,8 +612,27 @@ sudo python3 -c "import flask, requests, PIL" 2>/dev/null \
   && ok "python dependencies" || FAILED+=("python dependencies")
 sudo python3 -c "import rgbmatrix" 2>/dev/null \
   && ok "rgbmatrix" || warn "rgbmatrix missing (emulator only, no panel output)"
-python3 -m tools.test_scoreboard >/dev/null 2>&1 \
-  && ok "self-tests" || FAILED+=("self-tests")
+# Captured, not discarded. This step used to send both streams to /dev/null,
+# so a failure reported the single word "self-tests" and nothing else --
+# leaving you to re-run the suite by hand to find out what it was, on a board
+# you may have reached over ssh specifically to avoid that. Every other step
+# here shows the tail of what failed; this one now does too.
+SELFTEST_LOG=/tmp/scoreboard-selftest.log
+if python3 -m tools.test_scoreboard >"$SELFTEST_LOG" 2>&1; then
+  ok "self-tests"
+else
+  warn "self-tests failed"
+  # The suite prints one line per check; only the failures are worth showing.
+  if grep -q '  FAIL' "$SELFTEST_LOG"; then
+    grep '  FAIL' "$SELFTEST_LOG" | head -12 | sed 's/^/      /'
+  else
+    # A crash rather than a failed assertion: no FAIL lines, so show the end.
+    tail -12 "$SELFTEST_LOG" | sed 's/^/      /'
+  fi
+  echo "      full output: $SELFTEST_LOG"
+  echo "      re-run it yourself with: python3 -m tools.test_scoreboard"
+  FAILED+=("self-tests")
+fi
 python3 -c "
 from data import espn
 print('    live data: {} NFL games today'.format(len(espn.scoreboard('nfl'))))

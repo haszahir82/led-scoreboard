@@ -518,10 +518,10 @@ footer {
       <div class="cmd-label">On your Mac, card still inserted</div>
       <button class="copy" type="button">Copy</button>
 <pre>cd ~/Downloads
-unzip -o led-scoreboard-v2.28.zip 'scoreboard/boot/*'
+unzip -o led-scoreboard-v2.30.zip 'scoreboard/boot/*'
 chmod +x scoreboard/boot/prepare-sd-card.sh
 
-scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.28.zip \
+scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.30.zip \
   --name "Living Room Scoreboard" \
   --panels 1 \
   --wifi "YourNetwork" --wifi-pass "…" \
@@ -628,12 +628,12 @@ scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.28.zip \
       <div class="cmd">
         <div class="cmd-label">From your Mac</div>
         <button class="copy" type="button">Copy</button>
-<pre>scp ~/Downloads/led-scoreboard-v2.28.zip &lt;user&gt;@&lt;ip&gt;:~</pre>
+<pre>scp ~/Downloads/led-scoreboard-v2.30.zip &lt;user&gt;@&lt;ip&gt;:~</pre>
       </div>
       <div class="cmd">
         <div class="cmd-label">Over SSH, one command</div>
         <button class="copy" type="button">Copy</button>
-<pre>unzip -o led-scoreboard-v2.28.zip &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</pre>
+<pre>unzip -o led-scoreboard-v2.30.zip &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</pre>
       </div>
       <p class="why">
         A failed step does not kill the run: everything that failed is listed at
@@ -796,7 +796,7 @@ sudo shutdown -h now</pre>
     <div class="cmd">
       <div class="cmd-label">From your Mac</div>
       <button class="copy" type="button">Copy</button>
-<pre>scp ~/Downloads/led-scoreboard-v2.28.zip &lt;user&gt;@&lt;board&gt;:~</pre>
+<pre>scp ~/Downloads/led-scoreboard-v2.30.zip &lt;user&gt;@&lt;board&gt;:~</pre>
     </div>
     <div class="cmd">
       <div class="cmd-label">Then, over SSH on the board</div>
@@ -1081,6 +1081,26 @@ sudo shutdown -h now</pre>
           <tr>
             <td>An NFL helmet renders as a coloured smudge</td>
             <td>Fixed in v2.21. The bundled helmets are hand-drawn at roughly 20&times;20 and stored as a 400&times;400 upscale, so every edge in them is a hard block boundary. The resize used LANCZOS, an interpolating filter meant for photographs, which averaged those blocks into one another: a five-colour helmet arrived as an orange blur. Pixel art is now sampled rather than filtered, decided by the source&rsquo;s colour count, because the averaging is still right for everything else &mdash; the Ravens mark sampled the same way comes apart into specks. The same release also trims the painted-on margin those files carry, which had been surviving the resize and leaving every helmet smaller than the marks beside it.</td>
+          </tr>
+          <tr>
+            <td>An NFL team shows its abbreviation instead of its logo</td>
+            <td>Fixed in <b>v2.30</b>, and the cause was structural rather than
+            about any one team. Shipped override art is tried first and short
+            circuits everything after it, so a single unusable file meant the
+            abbreviation &mdash; no second look, even with a good alternative
+            sitting in the same folder. Carolina surfaced it: the shipped mark
+            is the prowling panther, a black cat with a thin blue keyline,
+            which at 20&nbsp;px on an unlit panel measures 8% lit and 1% solid
+            &mdash; a scatter of dim blue dots. It failed the legibility check
+            so the board drew <code>CAR</code>, while <code>CARH.png</code>,
+            the silver helmet, sat beside it at 45% and 45% and was never
+            looked at. A source that fails is now a reason to try the next one:
+            shipped art, then ESPN with the true-colour and dark variants
+            measured against each other, then the bundled helmet, and only then
+            the abbreviation. One deliberate exception: art you made yourself
+            with <code>logo_tune</code> at exactly panel size is used as-is and
+            never measured, because you already looked at a contact sheet and
+            chose it.</td>
           </tr>
           <tr>
             <td>A logo is on the panel but you cannot tell what it is</td>
