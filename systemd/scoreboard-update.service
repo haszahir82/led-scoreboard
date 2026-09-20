@@ -1,0 +1,17 @@
+[Unit]
+Description=Check for and install a scoreboard release
+Documentation=https://github.com/OWNER/REPO
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/home/pi/scoreboard
+ExecStart=/home/pi/scoreboard/tools/selfupdate.sh
+# The self-tests on a Pi 3 take several minutes, and the run waits for NTP
+# before it starts, so the ceiling has to be generous. It still has one, or a
+# board that hangs on a bad download stops checking forever.
+TimeoutStartSec=2700
+StandardOutput=journal
+StandardError=journal

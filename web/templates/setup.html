@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Set up your scoreboard</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --line:#262d36;
+    --text:#e6edf3; --dim:#8b949e; --accent:#ffcd28; --ok:#3fb950; --bad:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height:100vh; display:flex; flex-direction:column;
+  }
+  .wrap { max-width:520px; margin:0 auto; padding:28px 20px 120px; width:100%; }
+  .brand { text-align:center; margin-bottom:26px; }
+  .brand h1 { font-size:21px; margin:0 0 6px; letter-spacing:.2px; }
+  .brand p { color:var(--dim); font-size:14px; margin:0; }
+  .dots { display:flex; gap:7px; justify-content:center; margin:20px 0 26px; }
+  .dots i { width:7px; height:7px; border-radius:50%; background:var(--line); transition:.2s; }
+  .dots i.on { background:var(--accent); width:22px; border-radius:4px; }
+  .step { display:none; }
+  .step.on { display:block; animation:fade .25s ease; }
+  @keyframes fade { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; }
+  h2 { font-size:18px; margin:0 0 6px; }
+  .sub { color:var(--dim); font-size:14px; margin:0 0 18px; }
+  label { display:block; font-size:13px; color:var(--dim); margin-bottom:7px; }
+  input[type=text] {
+    width:100%; background:#0b0f14; color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:13px 14px; font-size:17px;
+  }
+  input:focus { outline:none; border-color:var(--accent); }
+  .hint { font-size:13px; color:var(--dim); margin-top:9px; min-height:19px; }
+  .hint.ok { color:var(--ok); }
+  .hint.bad { color:var(--bad); }
+  code { background:#0b0f14; padding:2px 7px; border-radius:5px; font-size:14px; color:var(--accent); }
+  .league { border:1px solid var(--line); border-radius:11px; padding:13px 14px; margin-bottom:11px; }
+  .league h3 { font-size:15px; margin:0 0 3px; }
+  .league p { font-size:12px; color:var(--dim); margin:0 0 10px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .chip {
+    background:#21262d; border:1px solid var(--line); border-radius:20px;
+    padding:5px 11px; font-size:14px; display:inline-flex; align-items:center; gap:7px;
+  }
+  .chip button { background:none; border:0; color:var(--dim); font-size:16px; line-height:1; padding:0; cursor:pointer; }
+  .add { display:flex; gap:8px; }
+  .add input { flex:1; text-transform:uppercase; font-size:16px; padding:11px 12px; }
+  .add button {
+    background:#21262d; color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:0 17px; font-size:15px; cursor:pointer;
+  }
+  .nav { position:fixed; bottom:0; left:0; right:0; background:rgba(13,17,23,.97);
+    backdrop-filter:blur(8px); border-top:1px solid var(--line);
+    padding:14px 20px calc(14px + env(safe-area-inset-bottom)); display:flex; gap:11px;
+    justify-content:center; }
+  .nav .inner { max-width:520px; width:100%; margin:0 auto; display:flex; gap:11px; }
+  button.btn {
+    flex:1; border-radius:11px; padding:14px; font-size:16px; cursor:pointer;
+    background:#21262d; color:var(--text); border:1px solid var(--line);
+  }
+  button.btn.primary { background:var(--accent); color:#1a1200; border-color:var(--accent); font-weight:650; }
+  button.btn:disabled { opacity:.45; cursor:default; }
+  .done { text-align:center; padding:34px 20px; }
+  .done .tick { font-size:46px; color:var(--ok); line-height:1; }
+  .done h2 { margin:18px 0 10px; }
+  .addr { background:var(--panel); border:1px solid var(--line); border-radius:11px;
+    padding:16px; margin:20px 0; }
+  .addr .big { font-size:20px; color:var(--accent); font-weight:650; word-break:break-all; }
+  .warn { background:#2b2410; border:1px solid #5a4a1a; color:#e8d5a0;
+    border-radius:10px; padding:13px; font-size:14px; margin-top:16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">
+    <h1>Scoreboard setup</h1>
+    <p>Three quick things and you're done</p>
+  </div>
+
+  <div class="dots">
+    <i class="on" data-dot="0"></i><i data-dot="1"></i><i data-dot="2"></i>
+  </div>
+
+  <!-- 1: name -->
+  <div class="step on" data-step="0">
+    <div class="card">
+      <h2>Name this board</h2>
+      <p class="sub">This becomes the web address you'll use from now on, so you
+        won't need to hunt for an IP address again.</p>
+      <label for="name">Board name</label>
+      <input type="text" id="name" placeholder="Mike's Board" autocomplete="off"
+             value="{{ board_name }}">
+      <div class="hint" id="nameHint"></div>
+    </div>
+  </div>
+
+  <!-- 2: zip -->
+  <div class="step" data-step="1">
+    <div class="card">
+      <h2>Where is it?</h2>
+      <p class="sub">Used for the weather screen and to show game times in your
+        local timezone.</p>
+      <label for="zip">ZIP code</label>
+      <input type="text" id="zip" placeholder="43215" inputmode="numeric"
+             maxlength="5" autocomplete="postal-code" value="{{ zip_code }}">
+      <div class="hint" id="zipHint"></div>
+    </div>
+  </div>
+
+  <!-- 3: teams -->
+  <div class="step" data-step="2">
+    <div class="card">
+      <h2>Your teams</h2>
+      <p class="sub">When one of these plays, the board stops rotating and stays
+        on that game. You can change all of this later.</p>
+
+      <div class="league">
+        <h3>NFL</h3>
+        <p>Team abbreviations, like CIN, CLE, PIT</p>
+        <div class="add">
+          <input type="text" id="nflIn" placeholder="Add a team" maxlength="5">
+          <button type="button" onclick="addTeam('nfl')">Add</button>
+        </div>
+        <div class="chips" id="nflChips"></div>
+      </div>
+
+      <div class="league">
+        <h3>College football</h3>
+        <p>Like OSU, MICH, ND. Top 25 games show up automatically.</p>
+        <div class="add">
+          <input type="text" id="ncaafIn" placeholder="Add a team" maxlength="5">
+          <button type="button" onclick="addTeam('ncaaf')">Add</button>
+        </div>
+        <div class="chips" id="ncaafChips"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- done -->
+  <div class="step" data-step="3">
+    <div class="done">
+      <div class="tick">&#10003;</div>
+      <h2>All set</h2>
+      <p class="sub" id="doneSub"></p>
+      <div class="addr">
+        <div style="color:var(--dim);font-size:13px;margin-bottom:7px">
+          Bookmark this address</div>
+        <div class="big" id="doneAddr"></div>
+      </div>
+      <div class="warn" id="rebootWarn" style="display:none">
+        The board needs one restart for its new name to take effect. Unplug it,
+        wait five seconds, and plug it back in. Until then it stays reachable at
+        the address you're using now.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nav">
+  <div class="inner">
+    <button class="btn" id="back" onclick="go(-1)" style="display:none">Back</button>
+    <button class="btn primary" id="next" onclick="next()">Continue</button>
+  </div>
+</div>
+
+<script>
+let step = 0;
+const favorites = { nfl: [], ncaaf: [] };
+let zipOk = false;
+
+const $ = s => document.querySelector(s);
+const show = n => {
+  document.querySelectorAll('.step').forEach(el =>
+    el.classList.toggle('on', +el.dataset.step === n));
+  document.querySelectorAll('[data-dot]').forEach(el =>
+    el.classList.toggle('on', +el.dataset.dot === Math.min(n, 2)));
+  $('#back').style.display = (n > 0 && n < 3) ? '' : 'none';
+  $('#next').textContent = n === 2 ? 'Finish' : 'Continue';
+  $('#next').style.display = n === 3 ? 'none' : '';
+  $('.dots').style.display = n === 3 ? 'none' : '';
+  step = n;
+  validate();
+};
+
+function slug(name) {
+  return (name || '').trim().toLowerCase().replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-')
+    .replace(/^-|-$/g, '').slice(0, 32).replace(/^-|-$/g, '');
+}
+
+function validate() {
+  const btn = $('#next');
+  if (step === 0) {
+    const s = slug($('#name').value);
+    $('#nameHint').className = 'hint';
+    $('#nameHint').innerHTML = s
+      ? `Reachable at <code>${s}.local</code>`
+      : 'Pick something short, like "Mike\'s Board"';
+    btn.disabled = !s;
+  } else if (step === 1) {
+    btn.disabled = !zipOk;
+  } else {
+    btn.disabled = false;
+  }
+}
+
+$('#name').addEventListener('input', validate);
+
+let zipTimer = null;
+$('#zip').addEventListener('input', e => {
+  const v = e.target.value.replace(/\D/g, '').slice(0, 5);
+  e.target.value = v;
+  zipOk = false;
+  validate();
+  clearTimeout(zipTimer);
+  const hint = $('#zipHint');
+  if (v.length < 5) { hint.className = 'hint'; hint.textContent = ''; return; }
+  hint.className = 'hint';
+  hint.textContent = 'Checking...';
+  zipTimer = setTimeout(async () => {
+    try {
+      const r = await fetch('/api/zip/' + v);
+      const d = await r.json();
+      if (d.ok) {
+        zipOk = true;
+        hint.className = 'hint ok';
+        hint.textContent = d.label;
+      } else {
+        hint.className = 'hint bad';
+        hint.textContent = "That ZIP didn't match anywhere";
+      }
+    } catch (err) {
+      // Offline is not a reason to block setup; the board resolves it later.
+      zipOk = true;
+      hint.className = 'hint';
+      hint.textContent = "Couldn't check right now, we'll sort it out later";
+    }
+    validate();
+  }, 450);
+});
+
+function drawChips(league) {
+  const host = document.getElementById(league + 'Chips');
+  host.innerHTML = '';
+  favorites[league].forEach((abbr, i) => {
+    const c = document.createElement('span');
+    c.className = 'chip';
+    c.textContent = abbr;
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '×';
+    x.onclick = () => { favorites[league].splice(i, 1); drawChips(league); };
+    c.appendChild(x);
+    host.appendChild(c);
+  });
+}
+
+function addTeam(league) {
+  const input = document.getElementById(league + 'In');
+  const v = input.value.trim().toUpperCase();
+  if (v && !favorites[league].includes(v)) favorites[league].push(v);
+  input.value = '';
+  drawChips(league);
+}
+
+['nfl', 'ncaaf'].forEach(l => {
+  document.getElementById(l + 'In').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); addTeam(l); }
+  });
+});
+
+const go = d => show(step + d);
+
+async function next() {
+  if (step < 2) { show(step + 1); return; }
+
+  const btn = $('#next');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    const r = await fetch('/api/setup', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: $('#name').value.trim(),
+        zip: $('#zip').value.trim(),
+        favorites
+      })
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      btn.disabled = false;
+      btn.textContent = 'Finish';
+      $('#zipHint').className = 'hint bad';
+      $('#zipHint').textContent = d.error || 'Something went wrong';
+      return;
+    }
+    $('#doneAddr').textContent = 'http://' + d.mdns;
+    $('#doneSub').textContent = d.location
+      ? 'Showing games and weather for ' + d.location
+      : 'Your board is ready';
+    if (d.reboot_required) $('#rebootWarn').style.display = '';
+    show(3);
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Finish';
+  }
+}
+
+show(0);
+</script>
+</body>
+</html>

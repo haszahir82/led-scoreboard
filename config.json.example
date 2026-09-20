@@ -1,0 +1,163 @@
+{
+  "leagues": {
+    "nfl": {
+      "enabled": true,
+      "favorites": [
+        "CIN",
+        "CLE"
+      ]
+    },
+    "ncaaf": {
+      "enabled": true,
+      "favorites": [
+        "OSU"
+      ],
+      "poll": "ap",
+      "ranked_only": true
+    },
+    "nba": {
+      "enabled": false,
+      "favorites": [
+        "CLE"
+      ]
+    },
+    "ncaam": {
+      "enabled": false,
+      "favorites": [
+        "OSU"
+      ],
+      "ranked_only": true
+    },
+    "mlb": {
+      "enabled": false,
+      "favorites": [
+        "CLE"
+      ]
+    },
+    "nhl": {
+      "enabled": false,
+      "favorites": [
+        "CBJ"
+      ]
+    },
+    "wnba": {
+      "enabled": false,
+      "favorites": []
+    },
+    "epl": {
+      "enabled": false,
+      "favorites": []
+    },
+    "ucl": {
+      "enabled": false,
+      "favorites": []
+    },
+    "mls": {
+      "enabled": false,
+      "favorites": [
+        "CLB"
+      ]
+    }
+  },
+  "rotation": {
+    "enabled": true,
+    "favorites_only": false,
+    "stay_on_live_favorite": true,
+    "leave_during_halftime": true,
+    "rates": {
+      "live": 12.0,
+      "pregame": 8.0,
+      "final": 8.0,
+      "info": 10.0
+    },
+    "max_games": 14
+  },
+  "screens": {
+    "rankings": true,
+    "standings": true,
+    "leaders": true,
+    "team_summary": true,
+    "clock": true,
+    "weather": true,
+    "ticker": true,
+    "info_every": 4
+  },
+  "matrix": {
+    "rows": 32,
+    "cols": 64,
+    "chain_length": 1,
+    "parallel": 1,
+    "gpio_mapping": "adafruit-hat",
+    "brightness": null,
+    "pwm_bits": null,
+    "pwm_lsb_nanoseconds": 130,
+    "gpio_slowdown": null,
+    "scan_mode": 1,
+    "multiplexing": 0,
+    "row_address_type": 0,
+    "rgb_sequence": "RGB",
+    "pixel_mapper": "",
+    "no_hardware_pulse": false,
+    "limit_refresh_hz": 0,
+    "tile_screens": true
+  },
+  "display": {
+    "brightness": 60,
+    "use_helmet_logos": true,
+    "logo_style": "auto",
+    "logo_text_teams": [],
+    "time_format": "12h",
+    "timezone": "",
+    "scroll_speed": 0.04,
+    "sleep": {
+      "enabled": false,
+      "start": "23:30",
+      "end": "07:00"
+    }
+  },
+  "identity": {
+    "name": "Scoreboard",
+    "hostname": "scoreboard"
+  },
+  "location": {
+    "zip": "43215",
+    "latitude": null,
+    "longitude": null,
+    "city": "",
+    "state": "",
+    "resolved_zip": ""
+  },
+  "weather": {
+    "enabled": true,
+    "units": "imperial"
+  },
+  "fantasy": {
+    "enabled": false,
+    "league_url": "",
+    "league_id": "",
+    "game": "football",
+    "team_id": null,
+    "show_matchup": true,
+    "show_standings": true,
+    "refresh_seconds": 120
+  },
+  "setup": {
+    "complete": false
+  },
+  "web": {
+    "enabled": true,
+    "port": 8080
+  },
+  "performance": {
+    "profile": "auto",
+    "frame_rate": null,
+    "logo_prefetch": null
+  },
+  "refresh": {
+    "live_seconds": null,
+    "idle_seconds": null,
+    "rankings_seconds": 3600,
+    "standings_seconds": 3600
+  },
+  "debug": false
+}

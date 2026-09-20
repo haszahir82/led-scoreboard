@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for a scoreboard hostname change request
+
+[Path]
+# The web UI runs as `daemon` (the matrix library drops privileges) and cannot
+# call hostnamectl. It writes this file instead; this unit applies it as root.
+PathExists=/home/pi/scoreboard/state/hostname.request
+
+[Install]
+WantedBy=multi-user.target

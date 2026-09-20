@@ -1,0 +1,9 @@
+requests>=2.28
+Pillow>=9.0
+Flask>=2.2
+pytz>=2022.1
+tzlocal>=4.2
+
+# Desktop only. Lets you run the whole thing without a panel:
+#   python3 main.py --backend emulator
+RGBMatrixEmulator>=0.11 ; platform_machine != "armv7l" and platform_machine != "aarch64"

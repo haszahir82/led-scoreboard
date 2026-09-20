@@ -1,0 +1,454 @@
+#!/usr/bin/env bash
+# Manage the scoreboard without hand-typing systemctl and journalctl.
+#
+#   ./scoreboard status      is it running, what is it showing
+#   ./scoreboard start|stop|restart
+#   ./scoreboard logs        follow the log (ctrl-C to stop)
+#   ./scoreboard run         run in the foreground, for debugging
+#   ./scoreboard doctor      diagnose the usual failures
+#   ./scoreboard test        self-tests
+#   ./scoreboard data        check ESPN is reachable and parsing
+#   ./scoreboard config      show current settings
+#   ./scoreboard url         where to open the web UI
+#   ./scoreboard update      unpack a new zip over this install, keep config
+#   ./scoreboard selfupdate  check the release channel and install if newer
+#   ./scoreboard prepare     reset for handing to someone else
+
+set -uo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
+HERE="$PWD"
+
+BOLD=$'\033[1m'; DIM=$'\033[2m'; RED=$'\033[1;31m'; GRN=$'\033[1;32m'
+YEL=$'\033[1;33m'; OFF=$'\033[0m'
+
+ok()   { printf '  %s✓%s %s\n' "$GRN" "$OFF" "$*"; }
+bad()  { printf '  %s✗%s %s\n' "$RED" "$OFF" "$*"; }
+note() { printf '  %s·%s %s\n' "$YEL" "$OFF" "$*"; }
+head_() { printf '\n%s%s%s\n' "$BOLD" "$*" "$OFF"; }
+
+port() {
+  python3 -c "import json;print(json.load(open('config.json')).get('web',{}).get('port',8080))" \
+    2>/dev/null || echo 8080
+}
+
+cmd_url() {
+  local p; p="$(port)"
+  echo "http://$(hostname).local:$p"
+  local ip; ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  [[ -n "$ip" ]] && echo "http://$ip:$p"
+}
+
+cmd_status() {
+  head_ "Service"
+  if systemctl is-active --quiet scoreboard; then
+    ok "running since $(systemctl show scoreboard -p ActiveEnterTimestamp --value | cut -d' ' -f2-3)"
+  else
+    bad "not running"
+  fi
+  systemctl is-enabled --quiet scoreboard 2>/dev/null && ok "starts at boot" || note "will not start at boot"
+
+  head_ "Board"
+  python3 - <<'PY' 2>/dev/null || note "could not read board info"
+from data import hardware
+from data.config import Config
+cfg = Config()
+board = hardware.board_for(cfg)
+print("  " + board.describe())
+vals = {n: hardware.tuned(cfg, n) for n in hardware.PATHS}
+print("  {} fps, colour depth {}, slowdown {}, refresh {}s".format(
+    vals["frame_rate"], vals["pwm_bits"],
+    vals["gpio_slowdown"] if vals["gpio_slowdown"] is not None else "auto",
+    vals["live_seconds"]))
+PY
+
+  head_ "Data"
+  local p; p="$(port)"
+  if curl -sf "http://localhost:$p/api/status" -o /tmp/sb-status.json 2>/dev/null; then
+    python3 - <<'PY'
+import json
+d = json.load(open("/tmp/sb-status.json"))
+c = d.get("counts", {})
+print("  {} games tracked, {} live, {} involving your teams".format(
+    c.get("total", 0), c.get("live", 0), c.get("favorites", 0)))
+print("  data {}, {:.0f}s old".format(
+    "online" if d.get("online") else "OFFLINE", d.get("stale_seconds", 0)))
+if d.get("slate"):
+    print("  current slate: {}".format(d["slate"]))
+u = d.get("update") or {}
+if d.get("version"):
+    line = "  version {}".format(d["version"])
+    if u.get("channel"):
+        line += " on the {} channel".format(u["channel"])
+    print(line)
+if u.get("result"):
+    import time as _t
+    age = ""
+    if u.get("checked_at"):
+        hours = (_t.time() - float(u["checked_at"])) / 3600.0
+        age = " {:.0f}h ago".format(hours) if hours >= 1 else " just now"
+    print("  last update check:{} {} - {}".format(
+        age, u["result"], u.get("detail", "")))
+if d.get("current_screen"):
+    print("  showing: {}".format(d["current_screen"]))
+for g in d.get("games", [])[:5]:
+    star = "*" if g.get("favorite") else " "
+    print("   {} {} {} - {} {}  {}".format(
+        star, g["away"], g["away_score"], g["home_score"], g["home"],
+        g.get("detail", "")))
+PY
+  else
+    bad "web UI not answering on port $p (run: ./scoreboard doctor)"
+  fi
+
+  head_ "Open"
+  cmd_url | sed 's/^/  /'
+  echo
+}
+
+cmd_doctor() {
+  local problems=0
+
+  # Card health goes first, because a dying microSD is the single most common
+  # cause of "the Pi is behaving strangely" and it makes every check below
+  # untrustworthy. The failure is nasty precisely because it is not a clean
+  # stop: the card starts returning bad data, ext4 remounts read-only to
+  # protect itself, and from userspace that looks like wifi credentials that
+  # will not save, a config that reverts, a service that will not restart, and
+  # an install that half worked. Chasing any of those individually is wasted
+  # time if the card underneath is failing.
+  head_ "Storage"
+  ROOT_DEV="$(findmnt -no SOURCE / 2>/dev/null)"
+  if grep -qE ' / .* ro[, ]' /proc/mounts 2>/dev/null; then
+    bad "the root filesystem is mounted READ-ONLY"
+    echo "      ext4 does this to protect itself after I/O errors. Nothing can"
+    echo "      be saved, and it will not survive a reboot. Back up config.json"
+    echo "      and write a new card."
+    problems=$((problems+1))
+  else
+    ok "root filesystem is writable"
+  fi
+
+  IO_ERRORS="$(dmesg 2>/dev/null | grep -icE 'mmc[0-9]+: error|Buffer I/O error|EXT4-fs error|I/O error, dev mmcblk' || true)"
+  if [[ "${IO_ERRORS:-0}" -gt 0 ]]; then
+    bad "$IO_ERRORS card I/O errors in the kernel log"
+    echo "      the card is failing. Copy config.json off and re-image a new one."
+    dmesg 2>/dev/null | grep -iE 'mmc[0-9]+: error|Buffer I/O error|EXT4-fs error' \
+      | tail -3 | sed 's/^/      /'
+    problems=$((problems+1))
+  else
+    ok "no card I/O errors in the kernel log"
+  fi
+
+  if command -v dumpe2fs >/dev/null 2>&1 && [[ -n "$ROOT_DEV" ]]; then
+    FS_STATE="$(sudo dumpe2fs -h "$ROOT_DEV" 2>/dev/null \
+      | awk -F': *' '/Filesystem state/ {print $2}')"
+    case "$FS_STATE" in
+      clean)       ok "filesystem state: clean" ;;
+      "")          : ;;
+      *)           bad "filesystem state: $FS_STATE"
+                   echo "      run: sudo fsck -f $ROOT_DEV   (from another machine, or"
+                   echo "      force a check at boot with: sudo touch /forcefsck)"
+                   problems=$((problems+1)) ;;
+    esac
+  fi
+
+  if touch .doctor-write-probe 2>/dev/null; then
+    rm -f .doctor-write-probe
+    ok "the project directory accepts writes"
+  else
+    bad "cannot write to the project directory"
+    echo "      either the card is read-only, or it is out of space:"
+    df -h . 2>/dev/null | tail -1 | sed 's/^/      /'
+    problems=$((problems+1))
+  fi
+
+  head_ "Dependencies"
+  # These must be importable BY ROOT: the board runs as root for GPIO, and
+  # packages installed as your user land somewhere root cannot see.
+  # The import name and the package name are not always the same thing, and
+  # printing "pip install PIL" sends you after a package that does not exist.
+  for mod in flask requests PIL rgbmatrix; do
+    if sudo python3 -c "import $mod" 2>/dev/null; then
+      ok "$mod importable by root"
+    else
+      bad "$mod NOT importable by root"
+      case "$mod" in
+        rgbmatrix)
+          echo "      the panel cannot light up without it. Re-run ./install.sh" ;;
+        PIL)
+          echo "      sudo python3 -m pip install --break-system-packages Pillow" ;;
+        *)
+          echo "      sudo python3 -m pip install --break-system-packages $mod" ;;
+      esac
+      problems=$((problems+1))
+    fi
+  done
+
+  head_ "File permissions"
+  # The library setuids to `daemon` after claiming GPIO, so the real question is
+  # not what root can see but what daemon can. Debian's 0750 home directories
+  # block traversal, and PIL reports the result as "cannot open resource".
+  FONT_PROBE="$(ls fonts/* 2>/dev/null | head -1)"
+  if [[ -n "$FONT_PROBE" ]]; then
+    if sudo -u daemon cat "$FONT_PROBE" >/dev/null 2>&1; then
+      ok "daemon can read project files"
+    else
+      bad "daemon CANNOT read project files"
+      echo "      the board starts, then dies on the first text it draws"
+      BLOCKED="$PWD"
+      while [[ "$BLOCKED" != "/" ]]; do
+        BLOCKED="$(dirname "$BLOCKED")"
+        [[ "$BLOCKED" == "/" ]] && break
+        sudo -u daemon test -x "$BLOCKED" 2>/dev/null || \
+          echo "      sudo chmod o+x $BLOCKED"
+      done
+      problems=$((problems+1))
+    fi
+  fi
+  # The matrix library setuids to `daemon` after claiming GPIO, so anything
+  # written afterwards needs group write. This is the "permission denied when
+  # saving" bug.
+  if [[ -f config.json ]]; then
+    if [[ "$(stat -c '%G' config.json)" == "daemon" && -w config.json ]]; then
+      ok "config.json group-writable by daemon"
+    else
+      bad "config.json not writable after the privilege drop"
+      echo "      sudo chgrp -R daemon $HERE && sudo chmod 775 $HERE state logo_cache && sudo chmod 664 $HERE/config.json"
+      problems=$((problems+1))
+    fi
+  else
+    bad "config.json missing"
+    echo "      cp config.json.example config.json"
+    problems=$((problems+1))
+  fi
+  for d in state logo_cache; do
+    [[ -d $d ]] || { note "$d missing, creating"; mkdir -p "$d"; }
+  done
+
+  head_ "Panel prerequisites"
+  # The matrix library refuses to start at all on a PWM mapping while the Pi's
+  # sound driver holds the peripheral. It says so on stderr, which on a service
+  # means the journal, which means nobody sees it: the panel is just dark.
+  MAPPING="$(python3 -c "import json;print(json.load(open('config.json'))['matrix'].get('gpio_mapping',''))" 2>/dev/null || echo "")"
+  if lsmod 2>/dev/null | grep -q snd_bcm2835; then
+    case "$MAPPING" in
+      regular|adafruit-hat-pwm|classic)
+        bad "onboard sound is loaded and blocks mapping '$MAPPING'"
+        echo "      the library will refuse to start and the panel stays dark"
+        echo "      echo 'dtparam=audio=off' | sudo tee -a /boot/firmware/config.txt"
+        echo "      sudo reboot"
+        problems=$((problems+1)) ;;
+      *)
+        ok "onboard sound is loaded, but mapping '$MAPPING' does not use PWM" ;;
+    esac
+  else
+    ok "onboard sound disabled, PWM mappings usable"
+  fi
+
+  head_ "Flicker"
+  # Not failures. Both of these are improvements the library's own author
+  # recommends, and neither is discoverable from the settings page, so the
+  # only place they can reasonably surface is here.
+  SLOW_CFG="$(python3 -c "import json;v=json.load(open('config.json'))['matrix'].get('gpio_slowdown');print('' if v in (None,'') else v)" 2>/dev/null || echo "")"
+  if [[ -n "$SLOW_CFG" ]] && [[ "$SLOW_CFG" -gt 2 ]]; then
+    bad "gpio_slowdown is set to $SLOW_CFG"
+    echo "      Outside the range the library documents (0 to 2), and this is"
+    echo "      the wrong direction for flicker: slowdown pads every GPIO"
+    echo "      write, so it lowers the refresh rate, which is what you see as"
+    echo "      flicker. High values look like a scrambled picture."
+    echo "      Clear the field in the web UI to let the board choose."
+    problems=$((problems+1))
+  elif [[ -n "$SLOW_CFG" ]]; then
+    ok "gpio_slowdown set to $SLOW_CFG, within the documented range"
+  else
+    ok "gpio_slowdown left to the board profile"
+  fi
+
+  CORES="$(nproc 2>/dev/null || echo 1)"
+  if [[ "$CORES" -ge 4 ]]; then
+    if grep -q isolcpus /proc/cmdline 2>/dev/null; then
+      ok "a CPU core is reserved for the panel refresh (isolcpus)"
+    else
+      note "no CPU core reserved for the panel refresh"
+      echo "      The refresh runs in a thread that has to hit its timing or"
+      echo "      the panel dims and shimmers, and on a $CORES-core Pi you can"
+      echo "      give it a core to itself. The library's author recommends it."
+      echo "      Append isolcpus=3 to the single line in"
+      echo "      /boot/firmware/cmdline.txt (same line, no newline), reboot."
+    fi
+  fi
+
+  case "$MAPPING" in
+    adafruit-hat)
+      note "the Adafruit board is wired without the PWM mod"
+      echo "      In this configuration the library cannot use the Pi's PWM"
+      echo "      hardware for the output-enable line and has to toggle it in"
+      echo "      software. Its docs are blunt about the result: random"
+      echo "      brightness glitches. The fix is one wire between GPIO 4 and"
+      echo "      GPIO 18 on the HAT (the Bonnet has a solder pad for it),"
+      echo "      then set Wiring to 'Adafruit HAT, PWM mod' and disable"
+      echo "      onboard audio. This is the real flicker fix; everything else"
+      echo "      is working around not having done it." ;;
+    adafruit-hat-pwm)
+      ok "Adafruit board using hardware PWM for output enable" ;;
+  esac
+
+  head_ "Self-update"
+  MANIFEST_URL="$(python3 -c "import json;print((json.load(open('config.json')).get('updates') or {}).get('manifest_url') or '')" 2>/dev/null || echo "")"
+  UPDATES_ON="$(python3 -c "import json;print((json.load(open('config.json')).get('updates') or {}).get('enabled', True))" 2>/dev/null || echo True)"
+  if [[ -z "$MANIFEST_URL" ]]; then
+    note "no release channel configured, so this board can only be updated by hand"
+    echo "      Set it in the web UI under Updates, or in config.json:"
+    echo "      updates.manifest_url"
+  elif [[ "$UPDATES_ON" != "True" ]]; then
+    note "self-update is switched off in settings"
+  else
+    ok "release channel: $MANIFEST_URL"
+    if [[ -f /etc/scoreboard/update-key.pem ]]; then
+      ok "update key present in /etc/scoreboard"
+    else
+      bad "no update key at /etc/scoreboard/update-key.pem"
+      echo "      Without it the board refuses every release, by design. Re-run"
+      echo "      ./install.sh from a release that carries updates/pubkey.pem."
+      problems=$((problems+1))
+    fi
+    if systemctl is-enabled --quiet scoreboard-update.timer 2>/dev/null; then
+      ok "nightly check enabled: $(systemctl list-timers scoreboard-update.timer --no-pager 2>/dev/null | sed -n 2p | awk '{print $1, $2, $3}')"
+    else
+      bad "the nightly update timer is not enabled"
+      echo "      sudo systemctl enable --now scoreboard-update.timer"
+      problems=$((problems+1))
+    fi
+    # The signature check is the one thing that cannot be allowed to be
+    # broken quietly: a board that cannot verify is a board that stops
+    # updating, and it would do that silently until someone looked.
+    if [[ -f state/update-status.json ]]; then
+      python3 - <<'PY'
+import json, time
+try:
+    d = json.load(open("state/update-status.json"))
+except Exception:
+    raise SystemExit
+age = (time.time() - float(d.get("checked_at") or 0)) / 86400.0
+print("    · last check {:.1f} days ago: {} - {}".format(
+    age, d.get("result", "?"), d.get("detail", "")))
+if age > 3:
+    print("      That is stale. A board that stopped checking stopped being")
+    print("      updatable, which is worth knowing before you need it.")
+PY
+    else
+      note "no check has run yet on this board"
+    fi
+  fi
+
+  head_ "Clock and timezone"
+  local tz; tz="$(timedatectl show -p Timezone --value 2>/dev/null)"
+  [[ -z "$tz" ]] && tz="$(cat /etc/timezone 2>/dev/null)"
+  if [[ -z "$tz" ]]; then
+    note "could not read the timezone; check with: timedatectl"
+  elif [[ "$tz" == "UTC" || "$tz" == "Etc/UTC" ]]; then
+    bad "timezone is $tz, so every game time will be hours off"
+    echo "      sudo timedatectl set-timezone America/New_York"
+    problems=$((problems+1))
+  else
+    ok "timezone $tz ($(date '+%-I:%M %p %Z'))"
+  fi
+
+  head_ "Network and data"
+  if python3 -c "
+from data import espn
+n = len(espn.scoreboard('nfl'))
+print('    reachable, {} NFL games today'.format(n))" 2>/dev/null; then
+    ok "ESPN reachable"
+  else
+    bad "cannot reach ESPN"
+    echo "      the board keeps retrying; check wifi if this persists"
+    problems=$((problems+1))
+  fi
+
+  head_ "Web UI"
+  local p; p="$(port)"
+  if curl -sf -o /dev/null "http://localhost:$p/"; then
+    ok "answering on port $p"
+  else
+    bad "not answering on port $p"
+    journalctl -u scoreboard -n 40 --no-pager 2>/dev/null \
+      | grep -i "web UI failed" | tail -2 | sed 's/^/      /'
+    problems=$((problems+1))
+  fi
+
+  head_ "Service"
+  if ! systemctl is-system-running >/dev/null 2>&1 \
+     && ! systemctl list-units >/dev/null 2>&1; then
+    note "systemd not available here, skipping service checks"
+  elif systemctl is-active --quiet scoreboard 2>/dev/null; then
+    ok "running"
+    local restarts
+    restarts="$(systemctl show scoreboard -p NRestarts --value 2>/dev/null)"
+    if [[ "${restarts:-0}" -gt 3 ]]; then
+      note "restarted ${restarts} times, something is crashing"
+      journalctl -u scoreboard -n 20 --no-pager | grep -iE "error|traceback" \
+        | tail -3 | sed 's/^/      /'
+    fi
+  else
+    bad "not running"
+    echo "      ./scoreboard start, then ./scoreboard logs"
+    problems=$((problems+1))
+  fi
+
+  echo
+  if (( problems )); then
+    printf '%s%d problem(s) found.%s\n\n' "$RED" "$problems" "$OFF"
+    return 1
+  fi
+  printf '%sNo problems found.%s\n\n' "$GRN" "$OFF"
+}
+
+cmd_update() {
+  local zip="${1:-}"
+  if [[ -z "$zip" ]]; then
+    zip="$(ls -t "$HOME"/led-scoreboard*.zip 2>/dev/null | head -1)"
+  fi
+  [[ -n "$zip" && -f "$zip" ]] || {
+    echo "Usage: ./scoreboard update <zip>   (or drop the zip in \$HOME)" >&2
+    exit 1; }
+
+  head_ "Updating from $(basename "$zip")"
+  # config.json, state/ and logo_cache/ are gitignored and not in the zip, so
+  # unpacking over the top keeps your settings. Backed up regardless.
+  cp config.json "config.json.bak.$(date +%s)" 2>/dev/null && ok "config backed up"
+  sudo systemctl stop scoreboard 2>/dev/null
+  unzip -oq "$zip" -d "$(dirname "$HERE")" && ok "files updated"
+  chmod +x install.sh prepare-for-gift.sh scoreboard 2>/dev/null
+  sudo chgrp -R daemon "$HERE" 2>/dev/null
+  sudo chmod 775 "$HERE" state logo_cache 2>/dev/null
+  sudo chmod 664 config.json 2>/dev/null
+  # Logo processing changes between versions; a stale cache hides the fix.
+  rm -rf logo_cache/* 2>/dev/null && ok "logo cache cleared"
+  python3 -m tools.test_scoreboard >/dev/null 2>&1 \
+    && ok "self-tests pass" || bad "self-tests FAILED, check before relying on it"
+  sudo systemctl start scoreboard && ok "restarted"
+  echo
+}
+
+case "${1:-status}" in
+  status)  cmd_status ;;
+  start)   sudo systemctl start scoreboard   && ok "started" ;;
+  stop)    sudo systemctl stop scoreboard    && ok "stopped" ;;
+  restart) sudo systemctl restart scoreboard && ok "restarted" ;;
+  logs)    journalctl -u scoreboard -f ;;
+  run)     sudo systemctl stop scoreboard 2>/dev/null
+           echo "Foreground mode, ctrl-C to stop"
+           sudo python3 main.py "${@:2}" ;;
+  selfupdate) shift; exec "$HERE/tools/selfupdate.sh" "$@" ;;
+  doctor)  cmd_doctor ;;
+  test)    python3 -m tools.test_scoreboard ;;
+  data)    python3 -m tools.capture "${@:2}" ;;
+  config)  python3 -m json.tool config.json ;;
+  url)     cmd_url ;;
+  update)  cmd_update "${2:-}" ;;
+  prepare) sudo ./prepare-for-gift.sh ;;
+  -h|--help|help)
+    awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0" ;;
+  *) echo "unknown command: $1 (try ./scoreboard help)" >&2; exit 2 ;;
+esac

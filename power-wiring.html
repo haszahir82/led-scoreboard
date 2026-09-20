@@ -1,0 +1,451 @@
+<title>Scoreboard Power Wiring</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* Palette borrowed from the wiring itself: red is +5 V, the page's foreground
+   is ground, teal is signal, amber marks the mains side you never open. */
+:root {
+  --ground:   #f1f3f6;
+  --surface:  #ffffff;
+  --sunk:     #e7eaef;
+  --line:     #d2d8e0;
+  --line-soft:#e4e8ee;
+  --text:     #171b21;
+  --text-dim: #5b6674;
+  --pos:      #e03b3b;
+  --pos-bg:   #fdeced;
+  --data:     #17a2b8;
+  --mains:    #d97706;
+  --mains-bg: #fdf3e3;
+  --stop:     #b3271e;
+
+  --display: 'Archivo', system-ui, -apple-system, sans-serif;
+  --body:    'Public Sans', system-ui, -apple-system, sans-serif;
+  --mono:    'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+
+:root:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --ground:   #101318;
+    --surface:  #181c23;
+    --sunk:     #1f242c;
+    --line:     #2e353f;
+    --line-soft:#252b34;
+    --text:     #e6eaf0;
+    --text-dim: #949fad;
+    --pos:      #ff6b6b;
+    --pos-bg:   #2b1618;
+    --data:     #3fc9dd;
+    --mains:    #f0a53a;
+    --mains-bg: #2a2011;
+    --stop:     #ff7a70;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:   #101318;
+  --surface:  #181c23;
+  --sunk:     #1f242c;
+  --line:     #2e353f;
+  --line-soft:#252b34;
+  --text:     #e6eaf0;
+  --text-dim: #949fad;
+  --pos:      #ff6b6b;
+  --pos-bg:   #2b1618;
+  --data:     #3fc9dd;
+  --mains:    #f0a53a;
+  --mains-bg: #2a2011;
+  --stop:     #ff7a70;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page { max-width: 880px; margin: 0 auto; padding-block: 44px 72px; padding-left: 20px; padding-right: 20px; }
+
+header { border-bottom: 2px solid var(--text); padding-bottom: 20px; margin-bottom: 34px; }
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11.5px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--pos); margin: 0 0 10px;
+}
+
+h1 {
+  font-family: var(--display);
+  font-size: clamp(29px, 5.6vw, 40px);
+  font-weight: 700; letter-spacing: -.015em; line-height: 1.08;
+  margin: 0 0 12px; text-wrap: balance;
+}
+
+.standfirst { margin: 0; color: var(--text-dim); font-size: 17px; max-width: 62ch; }
+
+h2 {
+  font-family: var(--display);
+  font-size: 20px; font-weight: 600; letter-spacing: -.01em;
+  margin: 0 0 6px; text-wrap: balance;
+}
+
+section { margin-bottom: 40px; }
+p { max-width: 65ch; }
+
+figure { margin: 0 0 8px; }
+
+.figbox {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 16px 12px;
+  overflow-x: auto;
+}
+.figbox svg { display: block; width: 100%; min-width: 620px; height: auto; }
+
+figcaption {
+  margin-top: 12px; font-size: 14.5px; color: var(--text-dim);
+  max-width: 68ch;
+}
+
+/* Diagram type. Set here rather than inline so both themes share one source. */
+.d-label { font-family: var(--body); font-size: 13px; font-weight: 600; fill: var(--text); }
+.d-sub   { font-family: var(--mono); font-size: 11px; fill: var(--text-dim); }
+.d-note  { font-family: var(--body); font-size: 11.5px; font-style: italic; fill: var(--text-dim); }
+.d-wire  { font-family: var(--mono); font-size: 11px; fill: var(--text-dim); }
+.d-rail  { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.zone { fill: var(--mains-bg); stroke: var(--mains); stroke-width: 1.5; stroke-dasharray: 6 4; }
+
+.legend {
+  display: flex; flex-wrap: wrap; gap: 10px 22px;
+  margin: 14px 0 0; padding: 0; list-style: none;
+  font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+}
+.legend li { display: flex; align-items: center; gap: 8px; }
+.swatch { width: 22px; height: 3px; border-radius: 2px; flex: none; }
+
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 460px; font-size: 15px; }
+th {
+  text-align: left; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim);
+  font-weight: 500; padding: 0 14px 8px 0; border-bottom: 1px solid var(--line);
+}
+td { padding: 11px 14px 11px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+td:first-child { font-weight: 600; width: 40%; }
+td .why { display: block; color: var(--text-dim); font-size: 14px; margin-top: 2px; }
+td.qty { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text-dim); width: 12%; }
+
+.rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.rule {
+  border-left: 3px solid var(--stop);
+  background: var(--surface);
+  border-radius: 0 8px 8px 0;
+  padding: 13px 16px;
+}
+.rule b { font-weight: 600; }
+.rule p { margin: 5px 0 0; color: var(--text-dim); font-size: 14.5px; }
+
+.check { background: var(--sunk); border-radius: 10px; padding: 20px 22px; }
+.check ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+.check li::marker { font-family: var(--mono); font-size: 13px; color: var(--pos); }
+.check p { margin: 0; }
+
+code {
+  font-family: var(--mono); font-size: 13.5px;
+  background: var(--sunk); border: 1px solid var(--line-soft);
+  padding: 1px 6px; border-radius: 4px;
+}
+
+footer {
+  margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line);
+  font-size: 13.5px; color: var(--text-dim);
+}
+
+@media (max-width: 560px) {
+  .page { padding-block: 30px 56px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="page">
+
+  <header>
+    <p class="eyebrow">5 V DC · two 64×32 panels · one supply</p>
+    <h1>Scoreboard Power Wiring</h1>
+    <p class="standfirst">
+      How to feed two chained LED panels and the Pi from a single sealed supply,
+      with every connection you touch sitting at 5 volts.
+    </p>
+  </header>
+
+  <section>
+    <h2>Power distribution</h2>
+    <p>
+      One supply, two buses, three loads. The panels and the Bonnet each take
+      their own pair straight off the bus rather than borrowing from a neighbour,
+      so no connector carries more current than the load behind it.
+    </p>
+
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 900 510" role="img"
+             aria-label="A sealed 5 volt 10 amp supply plugs into a barrel-to-screw-terminal adapter. The positive leg passes through a 10 amp fuse into a plus 5 volt bus bar; the negative leg goes straight to a ground bus bar. Three pairs branch off the two buses: one to panel one, one to panel two, and one to the Bonnet barrel jack that powers the Pi.">
+
+          <defs>
+            <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="currentColor"></polygon>
+            </marker>
+            <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="#e03b3b"></polygon>
+            </marker>
+          </defs>
+
+          <!-- ---------------- mains zone ---------------- -->
+          <rect class="zone" x="20" y="14" width="432" height="100" rx="10"></rect>
+
+          <rect class="box" x="40" y="32" width="140" height="64" rx="6"></rect>
+          <text class="d-label" x="110" y="58" text-anchor="middle">Wall outlet</text>
+          <text class="d-sub" x="110" y="77" text-anchor="middle">120 V AC</text>
+
+          <line x1="182" y1="64" x2="224" y2="64" stroke="currentColor"
+                stroke-width="2" marker-end="url(#ah)"></line>
+
+          <rect class="box" x="232" y="24" width="200" height="80" rx="6"></rect>
+          <text class="d-label" x="332" y="48" text-anchor="middle">Sealed 5 V · 10 A brick</text>
+          <text class="d-sub" x="332" y="67" text-anchor="middle">UL or ETL listed</text>
+          <text class="d-note" x="332" y="87" text-anchor="middle">all AC stays inside</text>
+
+          <text class="d-wire" x="236" y="132" fill="#d97706">Mains side. Sealed, nothing exposed, never opened.</text>
+
+          <!-- ---------------- DC entry ---------------- -->
+          <line x1="454" y1="64" x2="498" y2="64" stroke="currentColor"
+                stroke-width="2" marker-end="url(#ah)"></line>
+          <text class="d-wire" x="476" y="52" text-anchor="middle">barrel</text>
+
+          <rect class="box" x="504" y="24" width="180" height="80" rx="6"></rect>
+          <text class="d-label" x="594" y="48" text-anchor="middle">Barrel jack to</text>
+          <text class="d-label" x="594" y="66" text-anchor="middle">screw terminals</text>
+          <text class="d-sub" x="594" y="87" text-anchor="middle">$3 adapter</text>
+
+          <!-- + leg out through the fuse -->
+          <line x1="686" y1="44" x2="752" y2="44" stroke="#e03b3b"
+                stroke-width="2.5" marker-end="url(#ahp)"></line>
+          <text class="d-wire" x="719" y="34" text-anchor="middle" fill="#e03b3b">+</text>
+
+          <rect class="box" x="758" y="20" width="126" height="52" rx="5"
+                stroke="#e03b3b"></rect>
+          <text class="d-label" x="821" y="42" text-anchor="middle">10 A fuse</text>
+          <text class="d-sub" x="821" y="60" text-anchor="middle">inline, + leg</text>
+
+          <path d="M 821 72 V 250" stroke="#e03b3b" stroke-width="2.5" fill="none"></path>
+
+          <!-- − leg down to the ground bus, hopping the +5 V rail -->
+          <path d="M 594 104 V 240 M 594 260 V 300" stroke="currentColor"
+                stroke-width="2.5" fill="none"></path>
+          <text class="d-wire" x="604" y="160">−</text>
+
+          <!-- ---------------- bus bars ---------------- -->
+          <path d="M 80 250 H 584 A 10 10 0 0 1 604 250 H 884"
+                stroke="#e03b3b" stroke-width="4" fill="none"></path>
+          <text class="d-rail" x="70" y="255" text-anchor="end" fill="#e03b3b">+5 V</text>
+
+          <path d="M 80 300 H 105 A 10 10 0 0 1 125 300 H 385 A 10 10 0 0 1 405 300 H 675 A 10 10 0 0 1 695 300 H 884"
+                stroke="currentColor" stroke-width="4" fill="none"></path>
+          <text class="d-rail" x="70" y="305" text-anchor="end">GND</text>
+
+          <text class="d-sub" x="884" y="232" text-anchor="end">WAGO 221 lever nuts, one per rail</text>
+
+          <!-- junctions that actually connect -->
+          <circle cx="821" cy="250" r="5" fill="#e03b3b"></circle>
+          <circle cx="115" cy="250" r="5" fill="#e03b3b"></circle>
+          <circle cx="395" cy="250" r="5" fill="#e03b3b"></circle>
+          <circle cx="685" cy="250" r="5" fill="#e03b3b"></circle>
+          <circle cx="594" cy="300" r="5" fill="currentColor"></circle>
+          <circle cx="205" cy="300" r="5" fill="currentColor"></circle>
+          <circle cx="485" cy="300" r="5" fill="currentColor"></circle>
+          <circle cx="775" cy="300" r="5" fill="currentColor"></circle>
+
+          <!-- ---------------- drops to the three loads ---------------- -->
+          <path d="M 115 250 V 290 M 115 310 V 380" stroke="#e03b3b" stroke-width="2.5" fill="none"></path>
+          <path d="M 205 300 V 380" stroke="currentColor" stroke-width="2.5" fill="none"></path>
+          <path d="M 395 250 V 290 M 395 310 V 380" stroke="#e03b3b" stroke-width="2.5" fill="none"></path>
+          <path d="M 485 300 V 380" stroke="currentColor" stroke-width="2.5" fill="none"></path>
+          <path d="M 685 250 V 290 M 685 310 V 380" stroke="#e03b3b" stroke-width="2.5" fill="none"></path>
+          <path d="M 775 300 V 380" stroke="currentColor" stroke-width="2.5" fill="none"></path>
+
+          <rect class="box" x="50" y="380" width="220" height="96" rx="6"></rect>
+          <text class="d-label" x="160" y="412" text-anchor="middle">Panel 1</text>
+          <text class="d-sub" x="160" y="434" text-anchor="middle">power header</text>
+          <text class="d-sub" x="160" y="454" text-anchor="middle">VCC / GND</text>
+
+          <rect class="box" x="330" y="380" width="220" height="96" rx="6"></rect>
+          <text class="d-label" x="440" y="412" text-anchor="middle">Panel 2</text>
+          <text class="d-sub" x="440" y="434" text-anchor="middle">power header</text>
+          <text class="d-sub" x="440" y="454" text-anchor="middle">VCC / GND</text>
+
+          <rect class="box" x="610" y="380" width="240" height="96" rx="6"></rect>
+          <text class="d-label" x="730" y="412" text-anchor="middle">Bonnet barrel jack</text>
+          <text class="d-sub" x="730" y="434" text-anchor="middle">male barrel pigtail</text>
+          <text class="d-sub" x="730" y="454" text-anchor="middle">this powers the Pi</text>
+        </svg>
+      </div>
+      <ul class="legend">
+        <li><span class="swatch" style="background:#e03b3b"></span> +5 V</li>
+        <li><span class="swatch" style="background:currentColor"></span> ground</li>
+        <li><span class="swatch" style="background:var(--mains)"></span> mains, sealed</li>
+        <li>◠ a hop means the wires cross without touching</li>
+        <li>● a dot means they join</li>
+      </ul>
+      <figcaption>
+        Every wire on the right of the brick is 5 V DC. You can handle all of it
+        with the power on and feel nothing, which is the whole reason the
+        splitting happens here and not at the wall.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Data, which is a separate path entirely</h2>
+    <p>
+      The ribbons between the panels carry signal and nothing else. That is why
+      panel two cannot be fed from panel one: there is no current path between
+      them to borrow.
+    </p>
+
+    <figure>
+      <div class="figbox">
+        <svg viewBox="0 0 780 150" role="img"
+             aria-label="The Pi and Bonnet's HUB75 output connects by ribbon to panel one's input. Panel one's output connects by a second ribbon to panel two's input. These ribbons carry data only.">
+          <defs>
+            <marker id="ahd" viewBox="0 0 10 10" refX="9" refY="5"
+                    markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <polygon points="0,0 10,5 0,10" fill="#17a2b8"></polygon>
+            </marker>
+          </defs>
+
+          <rect class="box" x="16" y="40" width="190" height="70" rx="6"></rect>
+          <text class="d-label" x="111" y="70" text-anchor="middle">Pi + Bonnet</text>
+          <text class="d-sub" x="111" y="91" text-anchor="middle">HUB75 out</text>
+
+          <line x1="210" y1="75" x2="278" y2="75" stroke="#17a2b8"
+                stroke-width="2.5" marker-end="url(#ahd)"></line>
+          <text class="d-wire" x="244" y="64" text-anchor="middle" fill="#17a2b8">16-pin ribbon</text>
+
+          <rect class="box" x="284" y="40" width="190" height="70" rx="6"></rect>
+          <text class="d-label" x="379" y="70" text-anchor="middle">Panel 1</text>
+          <text class="d-sub" x="379" y="91" text-anchor="middle">IN → OUT</text>
+
+          <line x1="478" y1="75" x2="546" y2="75" stroke="#17a2b8"
+                stroke-width="2.5" marker-end="url(#ahd)"></line>
+          <text class="d-wire" x="512" y="64" text-anchor="middle" fill="#17a2b8">16-pin ribbon</text>
+
+          <rect class="box" x="552" y="40" width="190" height="70" rx="6"></rect>
+          <text class="d-label" x="647" y="70" text-anchor="middle">Panel 2</text>
+          <text class="d-sub" x="647" y="91" text-anchor="middle">IN</text>
+
+          <text class="d-note" x="390" y="135" text-anchor="middle">no current flows on either ribbon</text>
+        </svg>
+      </div>
+      <figcaption>
+        Set <code>matrix.chain_length</code> to 2 once both are wired. The board
+        then treats the pair as one 128×32 surface and draws a different game in
+        each half.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>What to buy</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Part</th><th>Qty</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Sealed 5 V 10 A supply, barrel output</td>
+            <td class="qty">1</td>
+            <td>Look for a UL or ETL mark on the label. Unlisted bricks are a fire risk and routinely fail to deliver their rated current, which puts you right back in brownout territory.</td>
+          </tr>
+          <tr>
+            <td>Female barrel to screw terminal adapter</td>
+            <td class="qty">1</td>
+            <td>Sold as a CCTV power pigtail. Check it is 2.1&nbsp;mm and matches your brick's plug.</td>
+          </tr>
+          <tr>
+            <td>Male barrel pigtail</td>
+            <td class="qty">1</td>
+            <td>Feeds the Bonnet's jack from the bus.</td>
+          </tr>
+          <tr>
+            <td>WAGO 221 lever nuts</td>
+            <td class="qty">2</td>
+            <td>Rated 20 A, no tools, no exposed conductor once closed. One becomes the +5 V bus and one the ground bus.</td>
+          </tr>
+          <tr>
+            <td>Inline fuse holder, 10 A blade fuse</td>
+            <td class="qty">1</td>
+            <td>On the positive leg only, right after the brick. If a panel connector ever shorts inside a frame on someone's wall, the fuse opens instead of the wiring heating up.</td>
+          </tr>
+          <tr>
+            <td>18 AWG wire</td>
+            <td class="qty">—</td>
+            <td>Thinner wire that is fine at 3 A drops real voltage at 8, and sag at the far panel looks exactly like a signal fault.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Three things not to do</h2>
+    <ul class="rules">
+      <li class="rule">
+        <b>Do not use an open-frame supply.</b>
+        <p>The screw terminals on one of those carry live mains, uncovered. Fine
+        in a grounded enclosure on a bench, wrong for something that sits in a
+        living room and worse for something you hand to somebody else.</p>
+      </li>
+      <li class="rule">
+        <b>Do not run panel two's power through panel one.</b>
+        <p>The ribbon between them is data. Panel two's current has no business
+        flowing through panel one's power traces, which are sized for one panel.</p>
+      </li>
+      <li class="rule">
+        <b>Do not feed both panels through the Bonnet.</b>
+        <p>Same reason. Its traces and terminal block were designed around a
+        single panel, and 8 A through them buys you heat and voltage drop.</p>
+      </li>
+    </ul>
+  </section>
+
+  <section class="check">
+    <h2>Before you trust it</h2>
+    <ol>
+      <li><p>With the brick plugged in and nothing else connected, meter across the two lever nuts. You want 5.0 to 5.2 V.</p></li>
+      <li><p>Connect the panels and the Bonnet, power up, and put a full-white frame on the display.</p></li>
+      <li><p>Meter again at the <em>far</em> panel's header while that white frame is up. Still above 4.8 V means the wiring is carrying it. Below that, the gauge or a connection is the problem, not the supply.</p></li>
+      <li><p>Leave it running for an hour, then feel the fuse holder and both panel connectors. Warm is fine. Hot is a connection that is not tight.</p></li>
+    </ol>
+  </section>
+
+  <footer>
+    Companion to the build runbook. The panel current figures assume 64×32 P4
+    panels rated near 4 A each at full white; the average draw for a scoreboard
+    is far lower, but the supply has to survive the peak.
+  </footer>
+
+</div>

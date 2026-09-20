@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Scoreboard</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --line: #262d36;
+    --text: #e6edf3; --dim: #8b949e; --accent: #ffcd28; --ok: #3fb950; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 0 0 96px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; background: rgba(13,17,23,.94);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
+    padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .3px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); flex: none; }
+  .dot.bad { background: var(--bad); }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 16px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--dim); margin: 0 0 12px;
+  }
+  .preview { text-align: center; padding: 10px 0 4px; }
+  .preview img {
+    image-rendering: pixelated; max-width: 100%; border-radius: 6px;
+    border: 1px solid var(--line); background: #000;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: 0; }
+  .row label { flex: 1; min-width: 0; }
+  .row .hint { display: block; color: var(--dim); font-size: 12px; margin-top: 2px; }
+  input[type=text], input[type=number], select {
+    background: #0b0f14; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; font-size: 15px; min-width: 0;
+  }
+  input[type=text] { width: 100%; }
+  input[type=number] { width: 78px; text-align: right; }
+  input[type=range] { width: 130px; accent-color: var(--accent); }
+  .switch { position: relative; width: 46px; height: 27px; flex: none; }
+  .switch input { opacity: 0; width: 100%; height: 100%; margin: 0; }
+  .switch span {
+    position: absolute; inset: 0; background: #2b323b; border-radius: 27px;
+    transition: .15s; pointer-events: none;
+  }
+  .switch span::after {
+    content: ""; position: absolute; width: 21px; height: 21px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .15s;
+  }
+  .switch input:checked + span { background: var(--ok); }
+  .switch input:checked + span::after { transform: translateX(19px); }
+  .league { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .league.off { opacity: .5; }
+  .league-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .league-head strong { font-size: 15px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .chip {
+    background: #21262d; border: 1px solid var(--line); border-radius: 20px;
+    padding: 4px 10px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip button {
+    background: none; border: 0; color: var(--dim); cursor: pointer;
+    font-size: 15px; line-height: 1; padding: 0;
+  }
+  .add { display: flex; gap: 8px; margin-top: 10px; }
+  .add input { flex: 1; text-transform: uppercase; }
+  button.btn {
+    background: #21262d; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 9px 14px; font-size: 14px; cursor: pointer;
+  }
+  button.btn.primary { background: var(--accent); color: #1a1200; border-color: var(--accent); font-weight: 600; }
+  .games { font-size: 13px; }
+  .game { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); gap: 8px; }
+  .game:last-child { border-bottom: 0; }
+  .game .st { color: var(--dim); font-size: 11px; white-space: nowrap; }
+  .game.fav { color: var(--accent); }
+  .game.live .st { color: var(--ok); }
+  footer {
+    position: fixed; bottom: 0; left: 0; right: 0; background: rgba(13,17,23,.96);
+    backdrop-filter: blur(8px); border-top: 1px solid var(--line);
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    display: flex; gap: 10px; justify-content: center;
+  }
+  footer .btn { flex: 1; max-width: 200px; }
+  .toast {
+    position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%);
+    background: var(--ok); color: #04250f; padding: 9px 18px; border-radius: 20px;
+    font-size: 14px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast.err { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span>
+  <h1>Scoreboard</h1>
+  <span style="margin-left:auto;color:var(--dim);font-size:12px" id="counts"></span>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <h2>Live panel</h2>
+    <div class="preview"><img id="preview" alt="panel preview" width="512"></div>
+  </section>
+
+  <section>
+    <h2>Leagues &amp; favorites</h2>
+    <div id="leagues"></div>
+  </section>
+
+  <section>
+    <h2>Rotation</h2>
+    <div class="row">
+      <label>Rotate through games<span class="hint">Off pins the first game</span></label>
+      <span class="switch"><input type="checkbox" data-path="rotation.enabled"><span></span></span>
+    </div>
+    <div class="row">
+      <label>Favorites only<span class="hint">Hide everyone else</span></label>
+      <span class="switch"><input type="checkbox" data-path="rotation.favorites_only"><span></span></span>
+    </div>
+    <div class="row">
+      <label>Today's games only<span class="hint" id="slateHint">On Sunday, show the NFL and drop yesterday's college games. Works from the schedule, so bowl season and Thanksgiving behave correctly</span></label>
+      <span class="switch"><input type="checkbox" data-path="rotation.day_relevance"><span></span></span>
+    </div>
+    <div class="row"><label>My teams on their off day<span class="hint">1 shows a favorite's last result every pass, 3 shows it every third pass. Their poll and stats card follow the same setting</span></label>
+      <input type="number" min="1" max="10" step="1" data-path="rotation.offday_favorite_every"></div>
+    <div class="row">
+      <label>Stay on my live game<span class="hint">Stop rotating while a favorite plays</span></label>
+      <span class="switch"><input type="checkbox" data-path="rotation.stay_on_live_favorite"><span></span></span>
+    </div>
+    <div class="row">
+      <label>Leave at halftime</label>
+      <span class="switch"><input type="checkbox" data-path="rotation.leave_during_halftime"><span></span></span>
+    </div>
+    <div class="row"><label>Seconds per live game</label>
+      <input type="number" min="2" max="120" step="1" data-path="rotation.rates.live"></div>
+    <div class="row"><label>Seconds per upcoming game</label>
+      <input type="number" min="2" max="120" step="1" data-path="rotation.rates.pregame"></div>
+    <div class="row"><label>Seconds per final</label>
+      <input type="number" min="2" max="120" step="1" data-path="rotation.rates.final"></div>
+    <div class="row"><label>Max games in the loop</label>
+      <input type="number" min="1" max="60" step="1" data-path="rotation.max_games"></div>
+  </section>
+
+  <section>
+    <h2>Updates</h2>
+    <div class="row">
+      <div style="flex:1">
+        <div id="updateNow" style="color:var(--text)">Checking...</div>
+        <div id="updateWhen" class="hint"></div>
+      </div>
+    </div>
+    <div class="row">
+      <label>Keep this board up to date<span class="hint">Checks once a night over a normal internet connection, installs quietly, and undoes the change by itself if anything goes wrong. Turn it off and the board stays exactly as it is now</span></label>
+      <span class="switch"><input type="checkbox" data-path="updates.enabled"><span></span></span>
+    </div>
+    <div class="row"><label>Channel<span class="hint">Stable unless you are the one testing releases</span></label>
+      <select data-path="updates.channel">
+        <option value="stable">Stable</option>
+        <option value="beta">Beta</option>
+      </select></div>
+    <div class="row"><label>Release manifest<span class="hint">Where the board looks. Blank means no automatic updates at all</span></label>
+      <input type="text" data-path="updates.manifest_url" placeholder="https://..."></div>
+  </section>
+
+  <section>
+    <h2>Fantasy</h2>
+    <div class="row">
+      <label>ESPN fantasy<span class="hint" id="fantasyHint">Not set up</span></label>
+      <a href="/fantasy" class="btn" style="text-decoration:none;flex:none">Set up</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Extra screens</h2>
+    <div class="row"><label>Top 25 poll</label>
+      <span class="switch"><input type="checkbox" data-path="screens.rankings"><span></span></span></div>
+    <div class="row"><label>Standings</label>
+      <span class="switch"><input type="checkbox" data-path="screens.standings"><span></span></span></div>
+    <div class="row"><label>Game leaders</label>
+      <span class="switch"><input type="checkbox" data-path="screens.leaders"><span></span></span></div>
+    <div class="row"><label>My team card</label>
+      <span class="switch"><input type="checkbox" data-path="screens.team_summary"><span></span></span></div>
+    <div class="row"><label>Scrolling ticker</label>
+      <span class="switch"><input type="checkbox" data-path="screens.ticker"><span></span></span></div>
+    <div class="row"><label>Clock</label>
+      <span class="switch"><input type="checkbox" data-path="screens.clock"><span></span></span></div>
+    <div class="row"><label>Weather</label>
+      <span class="switch"><input type="checkbox" data-path="screens.weather"><span></span></span></div>
+    <div class="row"><label>Games between extras</label>
+      <input type="number" min="1" max="20" step="1" data-path="screens.info_every"></div>
+  </section>
+
+  <section>
+    <h2>Display</h2>
+    <div class="row"><label>Brightness</label>
+      <input type="range" min="10" max="100" step="5" data-path="display.brightness"></div>
+    <div class="row"><label>NFL helmet logos</label>
+      <span class="switch"><input type="checkbox" data-path="display.use_helmet_logos"><span></span></span></div>
+    <div class="row"><label>Team marks<span class="hint">Auto falls back to text when a logo is too dark to read</span></label>
+      <select data-path="display.logo_style">
+        <option value="auto">Auto</option>
+        <option value="logo">Always logo</option>
+        <option value="text">Always text</option>
+      </select></div>
+    <div class="row">
+      <label>Always text for<span class="hint">Comma separated, e.g. OSU. For marks that turn to mush at 20px</span></label>
+      <input type="text" style="width:120px" id="logoTextTeams" placeholder="OSU, PSU">
+    </div>
+    <div class="row"><label>Clock format</label>
+      <select data-path="display.time_format"><option value="12h">12 hour</option><option value="24h">24 hour</option></select></div>
+    <div class="row"><label>Sleep overnight</label>
+      <span class="switch"><input type="checkbox" data-path="display.sleep.enabled"><span></span></span></div>
+    <div class="row"><label>Sleep from</label>
+      <input type="text" style="width:88px" data-path="display.sleep.start" placeholder="23:30"></div>
+    <div class="row"><label>Wake at</label>
+      <input type="text" style="width:88px" data-path="display.sleep.end" placeholder="07:00"></div>
+  </section>
+
+  <section>
+    <h2>Panel hardware</h2>
+    <p class="hint" style="margin:-4px 0 12px">
+      Changes here need a restart. Panel pitch (P3, P4, P5) is physical only
+      and needs no setting.</p>
+    <div style="background:#0b0f14;border:1px solid var(--line);border-radius:8px;
+                padding:11px 13px;margin-bottom:14px;font-size:13px">
+      <div id="boardModel" style="color:var(--text)">Detecting board...</div>
+      <div id="boardTuning" style="color:var(--dim);margin-top:5px;
+           font-family:ui-monospace,Menlo,monospace;font-size:12px"></div>
+    </div>
+    <div class="row"><label>Tuning profile<span class="hint">Auto picks settings from the detected board</span></label>
+      <select data-path="performance.profile">
+        <option value="auto">Auto</option>
+        <option value="zero_w">Pi Zero / Zero W</option>
+        <option value="quad_small">Pi Zero 2 W / Pi 3</option>
+        <option value="pi4">Pi 4</option>
+        <option value="pi5">Pi 5</option>
+        <option value="generic">Generic</option>
+      </select></div>
+    <div class="row"><label>Frame rate<span class="hint">Blank follows the profile</span></label>
+      <input type="number" min="2" max="60" step="1" data-path="performance.frame_rate"></div>
+    <div class="row"><label>Panel width<span class="hint">Pixels across one panel</span></label>
+      <input type="number" min="8" max="256" step="8" data-path="matrix.cols"></div>
+    <div class="row"><label>Panel height<span class="hint">Pixels down one panel</span></label>
+      <input type="number" min="8" max="128" step="8" data-path="matrix.rows"></div>
+    <div class="row"><label>Daisy chained<span class="hint">Panels wired one after another off the HAT&rsquo;s output. <b>This is the one to change if you added a second panel.</b></span></label>
+      <input type="number" min="1" max="8" step="1" data-path="matrix.chain_length"></div>
+    <div class="row"><label>Parallel chains<span class="hint">Separate ribbons from separate GPIO banks. The Adafruit HAT and Bonnet have a single output, so leave this at&nbsp;1.</span></label>
+      <input type="number" min="1" max="3" step="1" data-path="matrix.parallel"></div>
+    <div class="row">
+      <label>Divider between panels<span class="hint">A drawn hairline on the seam. Off by default: the gap between two panels already separates them, and the line reads as a lit bar down the left panel&rsquo;s edge.</span></label>
+      <span class="switch"><input type="checkbox" data-path="display.cell_divider"><span></span></span>
+    </div>
+    <div class="row">
+      <label>One league at a time<span class="hint">All the college games, then all the NFL ones, instead of mixing them by kickoff.</span></label>
+      <span class="switch"><input type="checkbox" data-path="rotation.group_by_league"><span></span></span>
+    </div>
+    <div class="row">
+      <label>One game per panel<span class="hint" id="tileHint"></span></label>
+      <span class="switch"><input type="checkbox" data-path="matrix.tile_screens"><span></span></span>
+    </div>
+    <div class="row"><label>Wiring<span class="hint">HAT or bonnet type</span></label>
+      <select data-path="matrix.gpio_mapping">
+        <option value="adafruit-hat">Adafruit HAT / Bonnet</option>
+        <option value="adafruit-hat-pwm">Adafruit HAT, PWM mod</option>
+        <option value="regular">Direct GPIO wiring</option>
+      </select></div>
+    <div class="row"><label>Color depth<span class="hint">The flicker setting. Lower is faster: 8 or 9 costs almost nothing on a scoreboard</span></label>
+      <input type="number" min="1" max="11" step="1" data-path="matrix.pwm_bits"></div>
+    <div class="row"><label>GPIO slowdown<span class="hint">Leave blank. Raising this does not reduce flicker, it lowers the refresh rate</span></label>
+      <input type="number" min="0" max="4" step="1" data-path="matrix.gpio_slowdown"></div>
+    <details style="margin-top:10px">
+      <summary style="color:var(--dim);font-size:13px;cursor:pointer">
+        Unusual panels</summary>
+      <div class="row"><label>Multiplexing<span class="hint">0 for most. Some outdoor panels need 1-8</span></label>
+        <input type="number" min="0" max="8" step="1" data-path="matrix.multiplexing"></div>
+      <div class="row"><label>Row address type<span class="hint">1 for AB-addressed panels</span></label>
+        <input type="number" min="0" max="4" step="1" data-path="matrix.row_address_type"></div>
+      <div class="row"><label>Scan mode</label>
+        <select data-path="matrix.scan_mode">
+          <option value="1">Interlaced</option><option value="0">Progressive</option>
+        </select></div>
+      <div class="row"><label>Color order<span class="hint">If red and blue are swapped</span></label>
+        <select data-path="matrix.rgb_sequence">
+          <option>RGB</option><option>RBG</option><option>GRB</option>
+          <option>GBR</option><option>BRG</option><option>BGR</option>
+        </select></div>
+      <div class="row"><label>Pixel mapper<span class="hint">e.g. U-mapper or Rotate:90</span></label>
+        <input type="text" style="width:120px" data-path="matrix.pixel_mapper"></div>
+      <div class="row"><label>Refresh cap (Hz)<span class="hint">0 for unlimited</span></label>
+        <input type="number" min="0" max="400" step="10" data-path="matrix.limit_refresh_hz"></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>This board</h2>
+    <div class="row">
+      <label>Name<span class="hint" id="mdnsHint"></span></label>
+      <input type="text" id="boardName" style="width:170px" maxlength="40">
+    </div>
+    <div class="row">
+      <label>ZIP code<span class="hint" id="zipHint">Weather and local game times</span></label>
+      <input type="text" id="zipCode" style="width:96px" inputmode="numeric" maxlength="5">
+    </div>
+    <div class="row"><label>Units</label>
+      <select data-path="weather.units"><option value="imperial">Fahrenheit</option><option value="metric">Celsius</option></select></div>
+  </section>
+
+  <section>
+    <h2>Now tracking</h2>
+    <div class="games" id="games"></div>
+  </section>
+
+</div>
+
+<footer>
+  <button class="btn" id="refresh">Refresh data</button>
+  <button class="btn primary" id="save">Save</button>
+</footer>
+<div class="toast" id="toast"></div>
+
+<script>
+let CONFIG = null, LEAGUES = [];
+
+const $ = (s, r = document) => r.querySelector(s);
+const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), obj);
+const set = (obj, path, val) => {
+  const parts = path.split('.'), last = parts.pop();
+  let node = obj;
+  for (const p of parts) node = (node[p] = node[p] || {});
+  node[last] = val;
+};
+
+function toast(msg, bad) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (bad ? ' err' : '');
+  setTimeout(() => (el.className = 'toast'), 1800);
+}
+
+async function load() {
+  const res = await fetch('/api/config');
+  const data = await res.json();
+  CONFIG = data.config;
+  LEAGUES = data.leagues;
+  renderLeagues();
+  bindFields();
+
+  $('#boardName').value = get(CONFIG, 'identity.name') || '';
+  $('#zipCode').value = get(CONFIG, 'location.zip') || '';
+  $('#logoTextTeams').value = (get(CONFIG, 'display.logo_text_teams') || []).join(', ');
+  try {
+    const id = await (await fetch('/api/identity')).json();
+    $('#mdnsHint').textContent = id.pending_hostname
+      ? id.pending_hostname + '.local after restart'
+      : id.mdns;
+  } catch (e) {}
+  const city = get(CONFIG, 'location.city');
+  if (city) $('#zipHint').textContent = city + ', ' + (get(CONFIG, 'location.state') || '');
+  updateTileHint();
+  loadHardware();
+  loadFantasy();
+}
+
+async function loadFantasy() {
+  try {
+    const f = await (await fetch('/api/fantasy')).json();
+    const hint = $('#fantasyHint');
+    if (f.needs_auth) hint.textContent = 'Sign-in expired, tap to fix';
+    else if (f.enabled) hint.textContent = (f.league_name || 'Connected');
+    else hint.textContent = 'Not set up';
+  } catch (e) {}
+}
+
+// Shows what the board reported and what that resolved to, so "Auto" is a
+// visible decision rather than a black box.
+// The update panel. Worth showing plainly rather than hiding in a log: the
+// whole feature is invisible when it works, and the one question it has to be
+// able to answer is "is this board current".
+function showUpdate(d) {
+  const u = (d && d.update) || {};
+  const now = $('#updateNow');
+  const when = $('#updateWhen');
+  if (!now) return;
+  const running = d && d.version ? `Running v${d.version}` : 'Version unknown';
+  const chan = u.channel ? ` on the ${u.channel} channel` : '';
+  now.textContent = running + chan;
+  if (!u.result) {
+    when.textContent = 'No update check has run on this board yet.';
+    return;
+  }
+  const hours = u.checked_at
+    ? Math.round((Date.now() / 1000 - u.checked_at) / 3600) : null;
+  const ago = hours === null ? '' :
+    hours < 1 ? 'just now' : hours < 48 ? `${hours}h ago` :
+    `${Math.round(hours / 24)} days ago`;
+  const behind = u.available && u.installed && u.available !== u.installed
+    ? ` v${u.available} is available.` : '';
+  when.textContent = `Last checked ${ago}: ${u.result}.${behind} ${u.detail || ''}`;
+}
+
+async function loadHardware() {
+  try {
+    const h = await (await fetch('/api/hardware')).json();
+    $('#boardModel').textContent = h.detected
+      ? `${h.model} (${h.cores} core${h.cores === 1 ? '' : 's'})`
+      : 'Board not detected, using generic settings';
+    const v = h.values || {};
+    $('#boardTuning').textContent =
+      `${h.profile_label} · ${v.frame_rate} fps · depth ${v.pwm_bits}` +
+      ` · slowdown ${v.gpio_slowdown === null || v.gpio_slowdown === undefined ? 'auto' : v.gpio_slowdown}` +
+      ` · refresh ${v.live_seconds}s`;
+  } catch (e) {
+    $('#boardModel').textContent = 'Could not read board info';
+  }
+}
+
+// Show the resulting canvas and cell count, so "chain 2" reads as a concrete
+// outcome rather than a number whose effect you have to guess at.
+function updateTileHint() {
+  const m = CONFIG.matrix || {};
+  const cols = +m.cols || 64, rows = +m.rows || 32;
+  const w = cols * (+m.chain_length || 1), h = rows * (+m.parallel || 1);
+  const cells = (m.tile_screens !== false && w >= 64 && h >= 32)
+    ? Math.max(1, Math.floor(w / 64)) * Math.max(1, Math.floor(h / 32)) : 1;
+  $('#tileHint').textContent =
+    `${w}x${h} total, ${cells} screen${cells === 1 ? '' : 's'} at once`;
+}
+
+['matrix.cols', 'matrix.rows', 'matrix.chain_length', 'matrix.parallel',
+ 'matrix.tile_screens'].forEach(p => {
+  const el = document.querySelector(`[data-path="${p}"]`);
+  if (el) el.addEventListener('change', () => setTimeout(updateTileHint, 0));
+});
+
+function renderLeagues() {
+  const host = $('#leagues');
+  host.innerHTML = '';
+  for (const league of LEAGUES) {
+    const cfg = CONFIG.leagues[league.key] || { enabled: false, favorites: [] };
+    const box = document.createElement('div');
+    box.className = 'league' + (cfg.enabled ? '' : ' off');
+
+    const head = document.createElement('div');
+    head.className = 'league-head';
+    head.innerHTML = `<strong>${league.label}</strong>`;
+
+    const sw = document.createElement('span');
+    sw.className = 'switch';
+    sw.innerHTML = '<input type="checkbox"><span></span>';
+    const cb = sw.querySelector('input');
+    cb.checked = !!cfg.enabled;
+    cb.onchange = () => {
+      set(CONFIG, `leagues.${league.key}.enabled`, cb.checked);
+      box.className = 'league' + (cb.checked ? '' : ' off');
+    };
+    head.appendChild(sw);
+    box.appendChild(head);
+
+    if (league.ranked) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<label>Ranked games only<span class="hint">Plus your favorites, always</span></label>';
+      const s2 = document.createElement('span');
+      s2.className = 'switch';
+      s2.innerHTML = '<input type="checkbox"><span></span>';
+      const c2 = s2.querySelector('input');
+      c2.checked = !!cfg.ranked_only;
+      c2.onchange = () => set(CONFIG, `leagues.${league.key}.ranked_only`, c2.checked);
+      row.appendChild(s2);
+      box.appendChild(row);
+    }
+
+    const chips = document.createElement('div');
+    chips.className = 'chips';
+    box.appendChild(chips);
+
+    const drawChips = () => {
+      const favs = get(CONFIG, `leagues.${league.key}.favorites`) || [];
+      chips.innerHTML = '';
+      favs.forEach((abbr, i) => {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.textContent = abbr;
+        const x = document.createElement('button');
+        x.textContent = '×';
+        x.onclick = () => { favs.splice(i, 1); drawChips(); };
+        chip.appendChild(x);
+        chips.appendChild(chip);
+      });
+      if (!favs.length) chips.innerHTML = '<span style="color:var(--dim);font-size:13px">No favorites</span>';
+    };
+
+    const add = document.createElement('div');
+    add.className = 'add';
+    add.innerHTML = `<input type="text" placeholder="Add team (e.g. OSU)" list="dl-${league.key}">
+                     <datalist id="dl-${league.key}"></datalist>
+                     <button class="btn">Add</button>`;
+    const input = add.querySelector('input');
+    add.querySelector('button').onclick = () => {
+      const val = input.value.trim().toUpperCase();
+      if (!val) return;
+      const favs = get(CONFIG, `leagues.${league.key}.favorites`) || [];
+      if (!favs.includes(val)) favs.push(val);
+      set(CONFIG, `leagues.${league.key}.favorites`, favs);
+      input.value = '';
+      drawChips();
+    };
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); add.querySelector('button').click(); } };
+    box.appendChild(add);
+    host.appendChild(box);
+    drawChips();
+
+    fetch(`/api/teams/${league.key}`).then(r => r.json()).then(list => {
+      const dl = $(`#dl-${league.key}`);
+      if (dl) dl.innerHTML = list.map(t => `<option value="${t.abbr}">${t.name}</option>`).join('');
+    }).catch(() => {});
+  }
+}
+
+function bindFields() {
+  document.querySelectorAll('[data-path]').forEach(el => {
+    const path = el.dataset.path;
+    const val = get(CONFIG, path);
+    if (el.type === 'checkbox') el.checked = !!val;
+    else if (val !== undefined && val !== null) el.value = val;
+    el.onchange = () => {
+      let v;
+      if (el.type === 'checkbox') v = el.checked;
+      else if (el.type === 'number' || el.type === 'range') v = parseFloat(el.value);
+      else v = el.value;
+      set(CONFIG, path, v);
+    };
+  });
+}
+
+function slug(name) {
+  return (name || '').trim().toLowerCase().replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-')
+    .replace(/^-|-$/g, '').slice(0, 32).replace(/^-|-$/g, '');
+}
+
+let zipTimer = null;
+$('#zipCode').addEventListener('input', e => {
+  const v = e.target.value.replace(/\D/g, '').slice(0, 5);
+  e.target.value = v;
+  set(CONFIG, 'location.zip', v);
+  clearTimeout(zipTimer);
+  if (v.length < 5) return;
+  zipTimer = setTimeout(async () => {
+    try {
+      const d = await (await fetch('/api/zip/' + v)).json();
+      $('#zipHint').textContent = d.ok ? d.label : "ZIP not found";
+    } catch (e) {}
+  }, 450);
+});
+
+$('#logoTextTeams').addEventListener('input', e => {
+  const teams = e.target.value.split(',')
+    .map(s => s.trim().toUpperCase()).filter(Boolean);
+  set(CONFIG, 'display.logo_text_teams', teams);
+});
+
+$('#boardName').addEventListener('input', e => {
+  const s = slug(e.target.value);
+  $('#mdnsHint').textContent = s ? s + '.local' : 'Names the board on your network';
+});
+
+$('#save').onclick = async () => {
+  const name = $('#boardName').value.trim();
+  const res = await fetch('/api/config', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(CONFIG)
+  });
+  const out = await res.json();
+  if (!out.ok) { toast(out.error || 'Failed', true); return; }
+
+  // Renaming is a separate call because it may need a reboot to take effect.
+  if (name && name !== CONFIG.identity?.name) {
+    const idres = await (await fetch('/api/identity', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    })).json();
+    if (idres.ok && idres.reboot_required) {
+      toast('Saved. Restart for ' + idres.mdns);
+      return;
+    }
+  }
+  toast('Saved');
+};
+
+$('#refresh').onclick = async () => {
+  await fetch('/api/refresh', { method: 'POST' });
+  toast('Refreshing');
+};
+
+async function poll() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    $('#dot').className = 'dot' + (s.online ? '' : ' bad');
+    $('#counts').textContent = `${s.counts.live} live / ${s.counts.total}`;
+    $('#games').innerHTML = s.games.map(g => `
+      <div class="game ${g.favorite ? 'fav' : ''} ${g.state === 'in' ? 'live' : ''}">
+        <span>${g.away} ${g.away_score} &mdash; ${g.home} ${g.home_score}</span>
+        <span class="st">${g.detail || ''}</span>
+      </div>`).join('') || '<span style="color:var(--dim)">Nothing scheduled</span>';
+    showUpdate(s);
+  } catch (e) { $('#dot').className = 'dot bad'; }
+}
+
+function tickPreview() {
+  const img = $('#preview');
+  img.src = '/api/preview.png?scale=8&t=' + Date.now();
+}
+
+load();
+poll(); setInterval(poll, 5000);
+tickPreview(); setInterval(tickPreview, 1000);
+</script>
+</body>
+</html>

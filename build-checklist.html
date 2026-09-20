@@ -1,0 +1,1333 @@
+<title>Scoreboard Build Runbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+/* Palette taken from the panel itself: unlit substrate, and the amber the
+   board uses for its own headers. Neutrals carry a slight blue bias so they
+   read as electronics rather than paper. */
+:root {
+  --ground:      #f4f6f9;
+  --surface:     #ffffff;
+  --surface-alt: #eaeef4;
+  --line:        #d3dae4;
+  --line-soft:   #e4e9f0;
+  --text:        #171c24;
+  --text-dim:    #5c6879;
+  --amber:       #b07800;
+  --amber-bg:    #fdf4dd;
+  --green:       #16794a;
+  --red:         #b3271e;
+  --code-bg:     #12151a;
+  --code-text:   #e4e9f0;
+  --code-line:   #2a323d;
+
+  --step: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+
+:root:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --ground:      #0e1116;
+    --surface:     #161b22;
+    --surface-alt: #1c222b;
+    --line:        #2a323d;
+    --line-soft:   #222933;
+    --text:        #e4e9f0;
+    --text-dim:    #8c97a6;
+    --amber:       #ffc933;
+    --amber-bg:    #2a2210;
+    --green:       #4ade6b;
+    --red:         #f8574d;
+    --code-bg:     #0a0d12;
+    --code-text:   #e4e9f0;
+    --code-line:   #232b36;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0e1116;
+  --surface:     #161b22;
+  --surface-alt: #1c222b;
+  --line:        #2a323d;
+  --line-soft:   #222933;
+  --text:        #e4e9f0;
+  --text-dim:    #8c97a6;
+  --amber:       #ffc933;
+  --amber-bg:    #2a2210;
+  --green:       #4ade6b;
+  --red:         #f8574d;
+  --code-bg:     #0a0d12;
+  --code-text:   #e4e9f0;
+  --code-line:   #232b36;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page { max-width: 780px; margin: 0 auto; padding: 40px 20px 80px; }
+
+/* ---------- masthead ---------- */
+
+.masthead { border-bottom: 2px solid var(--text); padding-bottom: 20px; margin-bottom: 8px; }
+
+.kicker {
+  font-family: var(--step);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--amber);
+  margin: 0 0 10px;
+}
+
+h1 {
+  font-size: clamp(30px, 6vw, 42px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+  margin: 0 0 12px;
+  text-wrap: balance;
+}
+
+.standfirst { font-size: 17px; color: var(--text-dim); margin: 0; max-width: 60ch; }
+
+.meta {
+  display: flex; flex-wrap: wrap; gap: 8px 22px;
+  margin: 22px 0 0;
+  font-family: var(--step); font-size: 12.5px; color: var(--text-dim);
+}
+.meta b { color: var(--text); font-weight: 600; }
+
+/* ---------- progress ---------- */
+
+.tracker {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--ground);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0 11px;
+  margin-bottom: 34px;
+  display: flex; align-items: center; gap: 14px;
+}
+.bar { flex: 1; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.bar span { display: block; height: 100%; width: 0; background: var(--amber); transition: width .3s ease; }
+.count {
+  font-family: var(--step); font-size: 12.5px; font-weight: 500;
+  color: var(--text-dim); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.reset {
+  font-family: var(--step); font-size: 12px;
+  background: none; border: 1px solid var(--line); color: var(--text-dim);
+  border-radius: 5px; padding: 4px 10px; cursor: pointer;
+}
+.reset:hover { border-color: var(--text-dim); color: var(--text); }
+.reset:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ---------- phases ---------- */
+/* Numbered because this genuinely is a sequence: flashing before install,
+   install before the wifi reset, and the reset last of all. */
+
+.phase { margin-bottom: 44px; }
+
+.phase-head { display: flex; gap: 15px; align-items: baseline; margin-bottom: 6px; }
+.num {
+  font-family: var(--step); font-size: 13px; font-weight: 600;
+  color: var(--amber); flex: none; width: 26px;
+  font-variant-numeric: tabular-nums;
+}
+h2 {
+  font-size: 21px; font-weight: 650; letter-spacing: -.01em;
+  margin: 0; text-wrap: balance;
+}
+.why { margin: 0 0 18px 41px; color: var(--text-dim); font-size: 15px; max-width: 58ch; }
+
+.tasks { list-style: none; margin: 0 0 0 41px; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+
+.task { display: flex; gap: 11px; align-items: flex-start; padding: 7px 0; }
+.task input {
+  appearance: none; -webkit-appearance: none;
+  flex: none; width: 19px; height: 19px; margin: 2px 0 0;
+  border: 1.5px solid var(--line); border-radius: 4px;
+  background: var(--surface); cursor: pointer; position: relative;
+  transition: background .12s, border-color .12s;
+}
+.task input:checked { background: var(--green); border-color: var(--green); }
+.task input:checked::after {
+  content: ""; position: absolute; left: 5.5px; top: 1.5px;
+  width: 5px; height: 10px; border: solid #fff;
+  border-width: 0 2px 2px 0; transform: rotate(43deg);
+}
+.task input:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.task label { cursor: pointer; flex: 1; }
+.task input:checked + label { color: var(--text-dim); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+.sub { display: block; font-size: 14px; color: var(--text-dim); margin-top: 2px; }
+.task input:checked + label .sub { text-decoration: none; }
+
+/* ---------- code ---------- */
+
+.cmd {
+  position: relative;
+  margin: 12px 0 16px 41px;
+  background: var(--code-bg);
+  border: 1px solid var(--code-line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.cmd-label {
+  font-family: var(--step); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: #7d8798;
+  padding: 8px 13px 0;
+}
+.cmd pre {
+  margin: 0; padding: 7px 13px 13px;
+  overflow-x: auto;
+  font-family: var(--step); font-size: 13.5px; line-height: 1.65;
+  color: var(--code-text);
+}
+.cmd .c { color: #7d8798; }
+.copy {
+  position: absolute; top: 7px; right: 7px;
+  font-family: var(--step); font-size: 11px;
+  background: rgba(255,255,255,.07); border: 1px solid var(--code-line);
+  color: #a8b2c1; border-radius: 5px; padding: 4px 9px; cursor: pointer;
+}
+.copy:hover { background: rgba(255,255,255,.13); color: #fff; }
+.copy:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.copy.done { color: var(--green); border-color: var(--green); }
+
+/* ---------- callouts ---------- */
+
+.note {
+  margin: 14px 0 16px 41px; padding: 13px 16px;
+  border-left: 3px solid var(--amber);
+  background: var(--amber-bg);
+  border-radius: 0 6px 6px 0;
+  font-size: 14.5px;
+}
+.note.stop { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 9%, var(--surface)); }
+.note b { font-weight: 650; }
+
+/* ---------- route chooser ---------- */
+/* Two genuinely different paths, and picking the wrong one costs an hour, so
+   the choice goes above everything rather than in a note halfway down. */
+
+.routes { margin-bottom: 44px; }
+.routes h2 { margin-bottom: 16px; }
+.route {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 0 7px 7px 0;
+  background: var(--surface);
+  padding: 14px 18px;
+  margin-bottom: 10px;
+}
+.route:last-child { border-left-color: var(--green); }
+.route-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.route-tag {
+  font-family: var(--step); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-dim);
+  border: 1px solid var(--line); border-radius: 4px; padding: 2px 7px;
+  white-space: nowrap;
+}
+.route-tag.done { color: var(--green); border-color: var(--green); }
+.route p { margin: 8px 0 0; color: var(--text-dim); font-size: 15px; }
+.route a { color: var(--amber); }
+
+/* ---------- collapsed alternative path ---------- */
+/* The ssh route still works and is occasionally what you want, but it is no
+   longer the main road, so it folds away rather than competing for attention. */
+
+.fallback {
+  margin: 18px 0 0 41px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.fallback > summary {
+  cursor: pointer;
+  padding: 11px 15px;
+  font-family: var(--step);
+  font-size: 12.5px;
+  letter-spacing: .04em;
+  color: var(--text-dim);
+  list-style: none;
+}
+.fallback > summary::-webkit-details-marker { display: none; }
+.fallback > summary::before { content: "+ "; color: var(--amber); font-weight: 600; }
+.fallback[open] > summary::before { content: "- "; }
+.fallback > summary:hover { color: var(--text); }
+.fallback > summary:focus-visible { outline: 2px solid var(--amber); outline-offset: -2px; }
+.fallback[open] > summary { border-bottom: 1px solid var(--line-soft); }
+.fallback .why { margin: 14px 15px; }
+.fallback .cmd { margin-left: 15px; margin-right: 15px; }
+
+/* ---------- imager settings ---------- */
+
+.settings { margin: 0 0 0 41px; border-top: 1px solid var(--line-soft); }
+.setting {
+  display: flex; gap: 14px; padding: 9px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 15px; align-items: baseline;
+}
+.setting dt { flex: 0 0 34%; color: var(--text-dim); margin: 0; }
+.setting dd { margin: 0; flex: 1; font-family: var(--step); font-size: 13.5px; }
+
+/* ---------- recipient panel ---------- */
+/* Deliberately a different object: this is the only part that is not your
+   checklist, so it does not get checkboxes or step numbers. */
+
+.handoff {
+  margin-top: 56px; padding: 26px 28px;
+  background: var(--surface-alt);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.handoff h2 { margin-bottom: 4px; }
+.handoff p.why { margin-left: 0; }
+.handoff ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+.handoff li::marker { font-family: var(--step); font-size: 13px; color: var(--amber); }
+.handoff code, .inline {
+  font-family: var(--step); font-size: 13.5px;
+  background: var(--surface); border: 1px solid var(--line);
+  padding: 1px 6px; border-radius: 4px;
+}
+
+/* ---------- troubleshooting ---------- */
+
+.fixes { margin-top: 46px; }
+.fixes h2 { margin-bottom: 16px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; min-width: 480px; }
+th {
+  text-align: left; font-family: var(--step); font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim);
+  font-weight: 500; padding: 0 14px 8px 0; border-bottom: 1px solid var(--line);
+}
+td { padding: 11px 14px 11px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+td:first-child { color: var(--text-dim); width: 38%; }
+td code { font-family: var(--step); font-size: 13px; color: var(--amber); }
+
+/* A table used inside a phase lines up with that phase's other content, and
+   its first column is a short board name rather than a sentence. */
+.phase .table-wrap { margin: 12px 0 18px 41px; }
+.phase table { min-width: 380px; }
+.phase td:first-child { width: auto; color: var(--text); }
+.phase td:nth-child(2) { color: var(--text-dim); white-space: nowrap; }
+
+footer {
+  margin-top: 52px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px; color: var(--text-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+@media (max-width: 560px) {
+  .why, .tasks, .cmd, .note, .settings { margin-left: 0; }
+  .phase-head { gap: 10px; }
+  .setting { flex-direction: column; gap: 2px; }
+  .setting dt { flex: none; }
+}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="kicker">Raspberry Pi · 64×32 HUB75</p>
+    <h1>Scoreboard Build Runbook</h1>
+    <p class="standfirst">
+      Blank microSD card to a board someone else can plug in at their house and
+      set up from a phone. Build the first one from scratch, then clone it: the
+      second unit should take ten minutes, not an hour. Every unit gets built on
+      your wifi first, then reset for handoff.
+    </p>
+    <div class="meta">
+      <span><b>~1 hr</b> first unit</span>
+      <span><b>~10 min</b> per clone</span>
+      <span><b>0</b> commands typed on the Pi</span>
+      <span><b>Pi OS Lite</b> + Comitup</span>
+      <span><b>No</b> reliance on Imager customisation</span>
+    </div>
+  </header>
+
+  <div class="tracker">
+    <div class="bar"><span id="fill"></span></div>
+    <span class="count" id="count">0 / 0</span>
+    <button class="reset" id="reset" type="button">New unit</button>
+  </div>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="routes">
+    <h2>Two routes. Pick before you start.</h2>
+    <div class="route">
+      <div class="route-head"><span class="route-tag">First unit</span>
+        <b>Build from a blank card</b></div>
+      <p>Phases 01 to 06 below. The card carries its own installer and the Pi
+      sets itself up. Budget an hour, and expect to be in the terminal.</p>
+    </div>
+    <div class="route">
+      <div class="route-head"><span class="route-tag done">Units 2, 3, 4</span>
+        <b>Clone the working unit</b></div>
+      <p>Skip to <a href="#clone">phase 07</a>, then set up
+      <a href="#remote">remote updates</a> before the card goes out the door.
+      Writing a known-good image takes
+      about ten minutes and bypasses every step that can fail: no apt, no
+      compiling the LED driver, no cloud-init, no package repositories. If you
+      have a golden image, this is not the shortcut, it is the route.</p>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase">
+    <div class="phase-head"><span class="num">01</span><h2>Gather</h2></div>
+    <p class="why">
+      One supply runs everything. Power goes into the Bonnet's barrel jack,
+      which feeds the panel and back-powers the Pi through an onboard 1 A
+      diode. Never feed the panel through the Pi's 5 V pins.
+    </p>
+    <div class="note">
+      <b>Chaining a second panel needs a bigger supply, not just a cable.</b>
+      Panels are rated near 4 A each at 5 V, measured at full white across every
+      pixel. A scoreboard is mostly black so the real draw is closer to 1&ndash;2 A,
+      but the peak is what the supply has to survive, and a scoreboard hits white
+      often: a snow screen, a team in white, a flash on a score change. Two panels
+      plus a Pi on a 4 A supply browns out on those frames, and a brownout on a
+      HUB75 panel does not look like a power problem. It looks like corrupt rows,
+      wrong colours and random flicker, which is exactly what you would otherwise
+      spend a week blaming on GPIO timing. Budget <b>5 V 8 A for two panels</b>,
+      10 A if you want headroom, and set <code>matrix.chain_length</code> to 2.
+    </div>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t1a"><label for="t1a">Raspberry Pi Zero 2 W with headers<span class="sub">The original Zero W works but flickers; see the tuning notes below</span></label></li>
+      <li class="task"><input type="checkbox" id="t1b"><label for="t1b">Adafruit RGB Matrix Bonnet or HAT</label></li>
+      <li class="task"><input type="checkbox" id="t1c"><label for="t1c">64×32 HUB75 panel<span class="sub">P3 for indoor viewing, P5 if it hangs further away. Pitch is physical only and needs no setting</span></label></li>
+      <li class="task"><input type="checkbox" id="t1d"><label for="t1d">5 V 4 A supply into the Bonnet's barrel jack<span class="sub">One panel only. A 64×32 panel can pull 4 A on its own at full white, and the Pi wants up to another 1 A. See the chaining note below before you add a second panel</span></label></li>
+      <li class="task"><input type="checkbox" id="t1e2"><label for="t1e2">On a Pi 3 A+, check it runs stable on Bonnet power alone<span class="sub">The back-power diode is rated 1 A and a 3 A+ under load gets close. If it reboots, power the Pi over USB as well</span></label></li>
+      <li class="task"><input type="checkbox" id="t1e3"><label for="t1e3"><b>On a Pi 3 A+: a 2×20 extra-tall stacking header</b><span class="sub">Adafruit 1979 or 2223, about $2. A Bonnet seated all the way down on a 3 A+ rests on the metal shield over the wireless module and loses signal lines. This is not optional on that board</span></label></li>
+      <li class="task"><input type="checkbox" id="t1e"><label for="t1e">microSD card, 16 GB is plenty &mdash; but buy a good one<span class="sub">A1 or A2 rated, from SanDisk or Samsung, bought somewhere that is not selling counterfeits. A failing card is the most common cause of a Pi behaving strangely, and it does not fail cleanly</span></label></li>
+    </ul>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase">
+    <div class="phase-head"><span class="num">02</span><h2>Flash the card</h2></div>
+    <p class="why">
+      Imager is supposed to write your wifi and login onto the card before
+      first boot, which is what means you never have to reach an unconfigured
+      board. It does not always manage it, and it does not tell you when it
+      fails, so this phase ends by checking rather than assuming.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t2a"><label for="t2a">Install Raspberry Pi Imager and choose <b>Pi OS Lite</b><span class="sub">Update it if you have not lately: the customisation bug below was fixed after 2.0.6. Pick the bitness by RAM, not by model</span></label></li>
+      <li class="task"><input type="checkbox" id="t2b"><label for="t2b">Open the gear icon, OS Customisation, and fill in every row below</label></li>
+      <li class="task"><input type="checkbox" id="t2c"><label for="t2c">Write the card and <b>leave it in the Mac</b><span class="sub">The next phase writes to it. Do not eject yet</span></label></li>
+      <li class="task"><input type="checkbox" id="t2d"><label for="t2d">Check whether the settings actually landed<span class="sub">Do this every time. Imager reports success either way</span></label></li>
+    </ul>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Board</th><th>RAM</th><th>Image</th></tr></thead>
+        <tbody>
+          <tr><td>Pi Zero W (original)</td><td>512 MB</td><td>32-bit, and it is the only option: ARMv6</td></tr>
+          <tr><td>Pi Zero 2 W</td><td>512 MB</td><td>32-bit</td></tr>
+          <tr><td>Pi 3 A+</td><td>512 MB</td><td>32-bit</td></tr>
+          <tr><td>Pi 3 B+</td><td>1 GB</td><td>64-bit</td></tr>
+          <tr><td>Pi 4 / Pi 5</td><td>2 GB+</td><td>64-bit</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Bitness follows the RAM, not the model.</b> The 3 A+ and the Zero 2 W
+      are 64-bit chips, so a 64-bit image boots and runs on them. It just costs
+      100 to 200 MB more at idle, which is a real fraction of 512 MB and buys
+      nothing here: this board is a Python process drawing to a 64&times;32
+      frame, not something that gains from wider registers.
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">On your Mac, before going further</div>
+      <button class="copy" type="button">Copy</button>
+<pre>ls /Volumes/bootfs | grep -iE 'user-data|meta-data|network-config|custom.toml|firstrun'</pre>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>What you see</th><th>What the image is</th></tr></thead>
+        <tbody>
+          <tr><td><span class="inline">user-data</span>, <span class="inline">meta-data</span>, <span class="inline">network-config</span></td><td>cloud-init &mdash; Pi OS Trixie, images from November 2025 onward</td></tr>
+          <tr><td><span class="inline">custom.toml</span></td><td>Pi OS Bookworm with Imager 1.8 or later</td></tr>
+          <tr><td><span class="inline">firstrun.sh</span></td><td>older Imager</td></tr>
+          <tr><td>nothing</td><td>customisation did not apply</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>The three mechanisms do not read each other's files.</b> Pi OS moved to
+      cloud-init in the Trixie images, and a
+      <span class="inline">custom.toml</span> on one of those is simply ignored.
+      The giveaway is that it stays on the card: a file that was actually
+      consumed is deleted during the boot that read it. Phase 03 detects which
+      format the card wants and writes that one.
+    </div>
+    <div class="note">
+      <b>Empty output is also common, and not your mistake.</b> Imager has a
+      known intermittent bug where the settings are entered, the write reports
+      success, and nothing reaches the card, traced to the files not being
+      flushed before eject. Reported against 2.0.6 and fixed later, so update
+      Imager, but the failure is silent when it happens. Phase 03 writes the
+      settings itself, which is why this is a check rather than a stopping
+      point.
+    </div>
+    <dl class="settings">
+      <div class="setting"><dt>Hostname</dt><dd>scoreboard</dd></div>
+      <div class="setting"><dt>Username</dt><dd>your choice, plus a password</dd></div>
+      <div class="setting"><dt>Wireless LAN</dt><dd>your network, for now</dd></div>
+      <div class="setting"><dt>Wireless country</dt><dd>US — wifi stays off without it</dd></div>
+      <div class="setting"><dt>Locale</dt><dd>America/New_York</dd></div>
+      <div class="setting"><dt>Services</dt><dd>SSH on, password auth</dd></div>
+    </dl>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase">
+    <div class="phase-head"><span class="num">03</span><h2>Load the card</h2></div>
+    <p class="why">
+      The Pi's Linux partition is ext4 and macOS cannot touch it. The small
+      partition Finder shows as <span class="inline">bootfs</span> is plain
+      FAT32, and Pi OS runs a script from it on the very first boot. That is
+      the whole trick: the board installs itself, and you never open a terminal
+      on the Pi.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t3a"><label for="t3a">Confirm <span class="inline">bootfs</span> is mounted<span class="sub">If Finder named it something else, pass <span class="inline">--volume /Volumes/&lt;name&gt;</span></span></label></li>
+      <li class="task"><input type="checkbox" id="t3b"><label for="t3b">Get the prep script out of the zip<span class="sub">It ships inside the release at <span class="inline">scoreboard/boot/</span>, so there is nothing separate to keep track of</span></label></li>
+      <li class="task"><input type="checkbox" id="t3c"><label for="t3c">Run it with a name unique to this board<span class="sub">The name sets both the board title and its hostname, so it answers at <span class="inline">living-room-scoreboard.local</span> the first time it is plugged in</span></label></li>
+      <li class="task"><input type="checkbox" id="t3d"><label for="t3d">Eject the card and put it in the Pi</label></li>
+    </ul>
+    <div class="cmd">
+      <div class="cmd-label">On your Mac, card still inserted</div>
+      <button class="copy" type="button">Copy</button>
+<pre>cd ~/Downloads
+unzip -o led-scoreboard-v2.28.zip 'scoreboard/boot/*'
+chmod +x scoreboard/boot/prepare-sd-card.sh
+
+scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.28.zip \
+  --name "Living Room Scoreboard" \
+  --panels 1 \
+  --wifi "YourNetwork" --wifi-pass "…" \
+  --user yourname --user-pass "…"</pre>
+    </div>
+    <div class="note">
+      <b>Those last two lines replace Imager's gear screen.</b> They write
+      whichever format the card wants &mdash; cloud-init's three files on a
+      Trixie image, <span class="inline">custom.toml</span> on an older one
+      &mdash; detected from <span class="inline">cmdline.txt</span>. Same files
+      Imager would have produced, written once and checked rather than left to
+      the race that drops them. They also always switch SSH on and grant the
+      account passwordless sudo: the installer needs both, and neither is
+      obvious by its absence. A board that joins the wifi and answers to its
+      name but refuses every login looks like a far deeper problem than a
+      missed checkbox.
+    </div>
+    <div class="note">
+      <b>Passing them wins over Imager.</b> Anything Imager left on the card is
+      moved aside to <span class="inline">custom.toml.imager-bak</span> rather
+      than deleted. Leave the options off and Imager's settings stand
+      untouched.
+    </div>
+    <div class="note">
+      <b>The login password sits on the card.</b> It is hashed if your
+      <span class="inline">openssl</span> can, plain text if it cannot, and the
+      script tells you which. The wifi password is always plain, because the
+      encrypted form is reported not to apply reliably. This is a FAT
+      partition, so file permissions do not exist there. Delete
+      <span class="inline">custom.toml</span> from the card after the first
+      boot if that bothers you.
+    </div>
+    <div class="note">
+      <b>Nothing gets dragged into the card by hand.</b> The script copies the
+      zip, the first-boot script and the name onto
+      <span class="inline">bootfs</span> itself, and prints
+      <span class="inline">ok  zip copied</span> when they land. Leave the
+      release in <span class="inline">~/Downloads</span> and point at it: the
+      first path on that last line is the script you are running, the second is
+      the file you are feeding it, and neither one needs to be on the card
+      already.
+    </div>
+    <div class="note">
+      <b>Give every board its own name.</b> Two boards both called
+      <span class="inline">Scoreboard</span> both want
+      <span class="inline">scoreboard.local</span>, and on the same network one
+      of them loses. Name them for whoever is getting them.
+    </div>
+    <div class="note">
+      <b>It handles both kinds of card.</b> If Imager wrote its own first-run
+      script, this rides along inside it and leaves
+      <span class="inline">cmdline.txt</span> untouched. If not, it claims the
+      boot hook itself and backs up the original. Running it twice on the same
+      card is safe.
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase">
+    <div class="phase-head"><span class="num">04</span><h2>First boot, hands off</h2></div>
+    <p class="why">
+      Two boots, deliberately. The first-boot hook runs in a stripped-down
+      systemd target with no networking, which is fine for copying a file off
+      the card and far too early to fetch packages. So it arms the installer and
+      reboots; the second boot has a real network stack and does the work.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t4a"><label for="t4a">Connect the panel, then power the Pi</label></li>
+      <li class="task"><input type="checkbox" id="t4b"><label for="t4b">Wait through the first boot and its automatic reboot<span class="sub">About a minute</span></label></li>
+      <li class="task"><input type="checkbox" id="t4c"><label for="t4c">Wait for the install<span class="sub">15 to 20 minutes on a Zero 2 W, nearer 5 on a Pi 4, mostly compiling the matrix library</span></label></li>
+      <li class="task"><input type="checkbox" id="t4d"><label for="t4d">The panel lights up when it finishes</label></li>
+    </ul>
+    <div class="note">
+      <b>The log lives on the card.</b> If nothing happens, put the card back in
+      the Mac and open <span class="inline">scoreboard-install.log</span> on
+      <span class="inline">bootfs</span>. With no screen, no keyboard and no
+      ssh, that is the only diagnostic there is, which is exactly why it is
+      written there.
+    </div>
+    <div class="note">
+      <b>Wifi is the one hard requirement.</b> The matrix driver compiles from
+      source, so the first boot needs internet. If Imager's wireless settings
+      were wrong or missing, the log says so and nothing is lost: the payload is
+      already on the Pi, so fix the wifi, ssh in, and run
+      <span class="inline">~/scoreboard/install.sh --yes</span>.
+    </div>
+    <details class="fallback">
+      <summary>Doing it over ssh instead</summary>
+      <p class="why">
+        For a board that is already up, or when you would rather watch the
+        installer run.
+      </p>
+      <div class="cmd">
+        <div class="cmd-label">On the board, to get the account name and address</div>
+        <button class="copy" type="button">Copy</button>
+<pre>whoami; hostname -I</pre>
+      </div>
+      <p class="why">
+        Do not assume <span class="inline">pi</span> and
+        <span class="inline">scoreboard.local</span>. The account is whatever the
+        card was prepared with, and the <span class="inline">.local</span> name
+        only works if mDNS came up. The IP always works.
+      </p>
+      <div class="cmd">
+        <div class="cmd-label">From your Mac</div>
+        <button class="copy" type="button">Copy</button>
+<pre>scp ~/Downloads/led-scoreboard-v2.28.zip &lt;user&gt;@&lt;ip&gt;:~</pre>
+      </div>
+      <div class="cmd">
+        <div class="cmd-label">Over SSH, one command</div>
+        <button class="copy" type="button">Copy</button>
+<pre>unzip -o led-scoreboard-v2.28.zip &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</pre>
+      </div>
+      <p class="why">
+        A failed step does not kill the run: everything that failed is listed at
+        the end with its fix, and the installer is safe to re-run. Drop
+        <span class="inline">--yes</span> to be asked about Comitup.
+      </p>
+    </details>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase">
+    <div class="phase-head"><span class="num">05</span><h2>Test and tune</h2></div>
+    <p class="why">
+      Everything you settle here is a thing you do not have to talk a brother
+      through over the phone in November.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t5a"><label for="t5a">Run <span class="inline">./scoreboard doctor</span> and clear anything it flags<span class="sub">Checks root imports, permissions, timezone, ESPN, web UI, restart loops</span></label></li>
+      <li class="task"><input type="checkbox" id="t5b"><label for="t5b">Open the web page from your phone and confirm the live preview matches the panel</label></li>
+      <li class="task"><input type="checkbox" id="t5c"><label for="t5c">Tune until the flicker is gone<span class="sub">The board picks defaults for its own model; adjust colour depth and slowdown only if it still misbehaves</span></label></li>
+      <li class="task"><input type="checkbox" id="t5d"><label for="t5d">Verify game times read in Eastern, not UTC</label></li>
+    </ul>
+    <div class="cmd">
+      <div class="cmd-label">On the Pi</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./scoreboard doctor
+./scoreboard status
+./scoreboard logs     <span class="c"># ctrl-C to stop watching</span></pre>
+    </div>
+    <div class="note">
+      <b>Leave the panel settings correct.</b> The handoff reset deliberately
+      keeps them, because the person receiving the board has no way to work out
+      that their panel needs multiplexing 3.
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase">
+    <div class="phase-head"><span class="num">06</span><h2>Prepare for handoff</h2></div>
+    <p class="why">
+      This forgets your wifi so Comitup falls back to access-point mode in their
+      house, resets the setup wizard, and clears the SSH host keys and
+      machine-id so cloned cards do not collide on the same network.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t6a"><label for="t6a">Run the prep script and type <span class="inline">PREPARE</span> when asked</label></li>
+      <li class="task"><input type="checkbox" id="t6b"><label for="t6b">Shut down cleanly and wait for the green LED to stop</label></li>
+      <li class="task"><input type="checkbox" id="t6c"><label for="t6c">Pull the power, then the card</label></li>
+    </ul>
+    <div class="cmd">
+      <div class="cmd-label">On the Pi, last thing</div>
+      <button class="copy" type="button">Copy</button>
+<pre>cd ~/scoreboard
+./scoreboard prepare
+sudo shutdown -h now</pre>
+    </div>
+    <div class="note stop">
+      <b>Do not boot this card on your wifi again.</b> It would re-save your
+      network, and Comitup only opens its access point when there is nothing
+      left to connect to. If you do, re-run the prep script.
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase" id="clone">
+    <div class="phase-head"><span class="num">07</span><h2>Clone for the remaining units</h2></div>
+    <p class="why">
+      A clone is byte-for-byte identical to the unit it came from, which is the
+      point and also the catch: it arrives with the same hostname, the same SSH
+      host keys and the same machine-id. Two of those on one network collide,
+      so each clone gets an identity before it meets the original.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t7a"><label for="t7a">Image the working card while it is shut down<span class="sub">Do this <b>before</b> the handoff reset, so the image still has your wifi and you can test the clone</span></label></li>
+      <li class="task"><input type="checkbox" id="t7b"><label for="t7b">Write the image to the next card<span class="sub">Imager: "Use custom" and pick the .img. <b>No OS customisation</b> — it would overwrite the account and wifi you already have working</span></label></li>
+      <li class="task"><input type="checkbox" id="t7c"><label for="t7c">Power the original <b>down</b> before booting the clone<span class="sub">Both answer to the same name until the clone is renamed</span></label></li>
+      <li class="task"><input type="checkbox" id="t7d"><label for="t7d">Give the clone its own identity, then reboot</label></li>
+      <li class="task"><input type="checkbox" id="t7e"><label for="t7e">Bring the original back up and confirm both are reachable</label></li>
+    </ul>
+
+    <div class="cmd">
+      <div class="cmd-label">1. On your Mac, from the shut-down card</div>
+      <button class="copy" type="button">Copy</button>
+<pre>diskutil list                        <span class="c"># find the card by SIZE, not by number</span>
+diskutil unmountDisk /dev/disk4
+sudo dd if=/dev/rdisk4 of=~/scoreboard-golden.img bs=4m status=progress</pre>
+    </div>
+    <div class="note">
+      <b>Check the identifier against the size before running dd.</b> It writes
+      to whatever you point it at, including your own disk. Note
+      <span class="inline">rdisk4</span> rather than
+      <span class="inline">disk4</span> in the dd line: the raw device is several
+      times faster.
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-label">2. On the clone, first boot, original powered off</div>
+      <button class="copy" type="button">Copy</button>
+<pre>ssh scoreboard@rgb-scoreboard.local
+
+<span class="c"># New machine-id and SSH host keys, so DHCP and ssh stop seeing twins</span>
+sudo rm -f /etc/machine-id /var/lib/dbus/machine-id
+sudo systemd-machine-id-setup
+sudo rm -f /etc/ssh/ssh_host_*
+sudo ssh-keygen -A
+
+<span class="c"># New name. This also sets the hostname on the next boot.</span>
+cd ~/scoreboard
+echo "Kitchen Scoreboard" &gt; state/preseed-name.txt
+./install.sh --yes --no-comitup
+
+sudo reboot</pre>
+    </div>
+    <div class="note">
+      <b>Your Mac will refuse to connect after that</b>, and it is right to: the
+      host key changed, which is exactly what a man-in-the-middle looks like.
+      Clear the old entry and reconnect at the new name.
+      <div class="cmd" style="margin-left:0">
+        <div class="cmd-label">On your Mac</div>
+        <button class="copy" type="button">Copy</button>
+<pre>ssh-keygen -R rgb-scoreboard.local
+ssh scoreboard@kitchen-scoreboard.local</pre>
+      </div>
+    </div>
+    <div class="note">
+      <b>Why not set the name from the Mac?</b> The name lives on the Linux
+      partition, which macOS cannot write. The boot partition trick only applies
+      to a first-boot install, and a clone has already had its first boot.
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-label">3. Per unit, when it is ready to go out</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./install.sh --comitup       <span class="c"># the wifi portal, only needed for a gift</span>
+./scoreboard prepare         <span class="c"># forget your wifi, reset the wizard</span>
+sudo shutdown -h now</pre>
+    </div>
+    <div class="note">
+      <b>Order matters.</b> Comitup has to be installed while the board still
+      has your network, because installing it needs one. The reset comes after.
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase" id="update">
+    <div class="phase-head"><span class="num">08</span><h2>Update a board already in service</h2></div>
+    <p class="why">
+      Once four boards exist this is the only step you keep doing. It does not
+      touch the card, the wifi or the account: the release lands in the home
+      folder, the installer overwrites the project and restarts the service, and
+      settings, teams and ZIP code survive because they live in
+      <span class="inline">config.json</span>, which is left alone.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t8a"><label for="t8a">Find the board&rsquo;s address<span class="sub">The <span class="inline">.local</span> name if mDNS is working, otherwise the IP from your router. Confirm you are on the board you think you are before changing anything</span></label></li>
+      <li class="task"><input type="checkbox" id="t8b"><label for="t8b">Copy the release across</label></li>
+      <li class="task"><input type="checkbox" id="t8c"><label for="t8c">Unzip and install over SSH</label></li>
+      <li class="task"><input type="checkbox" id="t8d"><label for="t8d">Check the version actually changed<span class="sub">The single most useful two seconds in this whole document</span></label></li>
+    </ul>
+    <div class="cmd">
+      <div class="cmd-label">From your Mac</div>
+      <button class="copy" type="button">Copy</button>
+<pre>scp ~/Downloads/led-scoreboard-v2.28.zip &lt;user&gt;@&lt;board&gt;:~</pre>
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">Then, over SSH on the board</div>
+      <button class="copy" type="button">Copy</button>
+<pre>cd ~ &amp;&amp; unzip -o "$(ls -t led-scoreboard-*.zip | head -1)" &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</pre>
+    </div>
+    <div class="note">
+      <b>That line deliberately does not name a version.</b>
+      <span class="inline">ls -t | head -1</span> picks whichever release you
+      most recently copied over, so the filename in the unzip can never drift
+      out of step with the filename in the scp &mdash; which is its own small
+      class of wasted evening: unzipping a version you did not send, watching
+      the install succeed, and finding the old code still running.
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">Confirm, on the board</div>
+      <button class="copy" type="button">Copy</button>
+<pre>grep -m1 VERSION ~/scoreboard/main.py
+./scoreboard status</pre>
+    </div>
+    <div class="note">
+      <b>An upgrade clears the logo cache.</b> Cached bitmaps otherwise outlive
+      every fix to the artwork pipeline, so a release that corrects how a logo
+      is drawn would appear to change nothing. Nothing else is discarded.
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="phase" id="remote">
+    <div class="phase-head"><span class="num">09</span><h2>Set up remote updates</h2></div>
+    <p class="why">
+      Do this once, before you build the gift cards. After it, a release you
+      publish reaches all four boards overnight without you being on anyone's
+      network. Boards ask outward over ordinary HTTPS, so nothing is forwarded,
+      nothing listens, and nothing is configured on anyone's router &mdash; it
+      works behind carrier-grade NAT, where inbound would not.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t9a"><label for="t9a">Create the signing key<span class="sub">Once, on your Mac. The private half never leaves it</span></label></li>
+      <li class="task"><input type="checkbox" id="t9b"><label for="t9b"><b>Back the private key up somewhere you will still have it in two years</b><span class="sub">A password manager's secure note is fine. Lose it and no board can be updated again without physically getting to it</span></label></li>
+      <li class="task"><input type="checkbox" id="t9c"><label for="t9c">Commit the public key and publish a first release to <span class="inline">beta</span></label></li>
+      <li class="task"><input type="checkbox" id="t9d"><label for="t9d">Point each board at the manifest and set its channel<span class="sub">Yours on beta, the three gifts on stable. In the web UI under Updates</span></label></li>
+      <li class="task"><input type="checkbox" id="t9e"><label for="t9e">Re-run <span class="inline">./install.sh --yes</span> on each board<span class="sub">This is what copies the key into <span class="inline">/etc</span> and arms the nightly timer. A board installed from an earlier release has neither</span></label></li>
+      <li class="task"><input type="checkbox" id="t9f"><label for="t9f">Confirm with <span class="inline">./scoreboard doctor</span> and one forced check</label></li>
+    </ul>
+
+    <div class="cmd">
+      <div class="cmd-label">Once, on your Mac</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./tools/release.sh --init-key ~/.scoreboard/release-key.pem</pre>
+    </div>
+    <div class="note stop">
+      <b>That file is the only thing standing between a stranger and four Pis
+      inside three houses.</b> Whoever holds it can make every board run
+      whatever they like, at four in the morning, with no one watching. Keep it
+      off the boards, out of the repo, and backed up. The public half ships in
+      the release and gets copied to
+      <span class="inline">/etc/scoreboard/update-key.pem</span> on first
+      install, where an update cannot reach it &mdash; which is the point:
+      a release can never replace the key that would have caught it.
+    </div>
+
+    <div class="cmd">
+      <div class="cmd-label">Publishing a release</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./tools/release.sh beta</pre>
+    </div>
+    <p class="why">
+      Builds the zip, runs the tests, hashes it, points the beta channel at it,
+      signs the manifest, uploads the asset and pushes. Your board picks it up
+      that night, or immediately with
+      <span class="inline">./scoreboard selfupdate --force</span>.
+    </p>
+
+    <div class="cmd">
+      <div class="cmd-label">Once yours has run it for a day</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./tools/release.sh stable --promote</pre>
+    </div>
+    <div class="note">
+      <b>The two channels are the actual safety feature.</b> Signing stops an
+      attacker, which is unlikely; the promote step stops you, which is not.
+      Nothing reaches the three boards you cannot touch until a release has
+      spent a day running on the one you can.
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Setting</th><th>Your board</th><th>The three gifts</th></tr></thead>
+        <tbody>
+          <tr><td>Channel</td><td>Beta</td><td>Stable</td></tr>
+          <tr><td>Release manifest</td><td colspan="2">the same <span class="inline">raw.githubusercontent.com</span> URL on all four</td></tr>
+          <tr><td>Keep up to date</td><td>On</td><td>On, and theirs to switch off</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>What a board does at 4am, in order.</b> Waits for the clock to be
+      right, because a Pi with no battery clock cannot judge a certificate or a
+      quiet hour. Fetches the manifest and its signature and verifies it
+      against the key in <span class="inline">/etc</span>; a manifest that does
+      not verify ends the run. Compares versions and stops if there is nothing
+      new. Stops if any game is live, because nobody wants the panel to reboot
+      during a drive. Downloads, checks the hash against the signed manifest,
+      unpacks into a staging directory <i>beside</i> the running install and
+      runs that release's own test suite there &mdash; the panel is still
+      showing scores throughout. Only if all of that passes does it back up the
+      working copy, swap the new tree in, restart, and wait for the service to
+      report the expected version on its own port. Anything that fails restores
+      the backup, restarts, and writes the bad version to a list it will not
+      retry.
+    </div>
+    <div class="note">
+      <b>Settings survive.</b> <span class="inline">config.json</span>,
+      <span class="inline">state/</span> and the logo cache are not in the
+      release archive and are copied across explicitly as well, so teams, ZIP
+      code and panel tuning are never touched by an update. The logo cache is
+      deliberately cleared, because a cached bitmap outlives a fix to the
+      artwork pipeline.
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="handoff">
+    <div class="phase-head"><span class="num">→</span><h2>What they do</h2></div>
+    <p class="why">The whole reason for the steps above. No terminal, no cable, no phone call to you.</p>
+    <ol>
+      <li>Plug the board in and wait about a minute.</li>
+      <li>On a phone, join the wifi network named <code>scoreboard-nnn</code>.</li>
+      <li>The setup page opens by itself. Pick the home wifi, enter the password.</li>
+      <li>The board reboots onto their network.</li>
+      <li>Its own wizard asks for a board name, a ZIP code, and their teams.</li>
+      <li>It finishes by showing the address to bookmark, like <code>mikes-board.local:8080</code>.</li>
+    </ol>
+    <p class="why" style="margin-top:18px">
+      <b>Tell them it updates itself.</b> Once a night the board checks whether
+      you have published a new version and installs it if so, which is why they
+      will never need to do anything about a bug. It is their board, so say it
+      out loud rather than leaving them to find it: the page they just
+      bookmarked has an <i>Updates</i> section showing the version it is
+      running, when it last checked, and a switch to stop it. Nothing about
+      their network or their viewing leaves the house &mdash; the board asks for
+      a file and hangs up.
+    </p>
+  </section>
+
+  <!-- ---------------------------------------------------------------- -->
+  <section class="fixes">
+    <h2>When something goes wrong</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Symptom</th><th>Cause and fix</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Panel never lights after a card install</td>
+            <td>Put the card back in the Mac and read <code>scoreboard-install.log</code> on <code>bootfs</code>. It names the step that failed. Most often it is <i>no network after 5 minutes</i>, meaning Imager's wifi was wrong: fix it, ssh in, and run <code>~/scoreboard/install.sh --yes</code>. The payload is already on the Pi, so nothing is lost.</td>
+          </tr>
+          <tr>
+            <td><span class="inline">zsh: no such file or directory</span> running the prep script</td>
+            <td>The script is not where the command says it is. <code>~/</code> is only shorthand for your home folder, so <code>~/Downloads/prepare-sd-card.sh</code> is <code>/Users/you/Downloads/prepare-sd-card.sh</code> and zsh is reporting that no such file exists. Rather than hunting for a stray download, take it out of the zip as shown in phase 03.</td>
+          </tr>
+          <tr>
+            <td>macOS refuses to run the script</td>
+            <td>A file downloaded through a browser is quarantined. Run it as an argument to bash instead: <code>bash scoreboard/boot/prepare-sd-card.sh ...</code></td>
+          </tr>
+          <tr>
+            <td>Prep script says the card has no wifi and no user account</td>
+            <td>Either Imager's intermittent bug, or an older build of the script looking for the wrong files. Nothing was written to the card, so just pass <code>--wifi</code>, <code>--wifi-pass</code>, <code>--user</code>, <code>--user-pass</code> and re-run.</td>
+          </tr>
+          <tr>
+            <td><code>custom.toml</code> still on the card after a boot</td>
+            <td>It was never read. A consumed customisation file is deleted by the boot that applies it, so a file still sitting there means the image wanted a different format &mdash; almost always cloud-init on a Trixie image. Re-prepare the card with the current script and re-flash.</td>
+          </tr>
+          <tr>
+            <td>Log shows stage A only, nothing from stage B</td>
+            <td>On builds before v2.10 every stage B log line went through <code>sudo</code>, so a sudo prompt erased the entire log and looked identical to a service that never started. Update and re-prepare.</td>
+          </tr>
+          <tr>
+            <td>Log says <code>target user:</code> with an account you did not ask for</td>
+            <td>Also pre-v2.10. Stage A resolved uid 1000 before cloud-init had created the real account, so it installed for the image's placeholder. Stage B now resolves the account, after cloud-init has run.</td>
+          </tr>
+          <tr>
+            <td>Install log shows <code>sqv returned an error code</code> or <i>Not live until</i></td>
+            <td>The Pi&rsquo;s clock is wrong, not the repository. A Pi has no battery-backed clock, so on first boot the date is whatever was last written to disk, and apt refuses a signature whose validity has not started yet as far as this board is concerned. The confusing part is that HTTPS keeps working throughout, because a certificate&rsquo;s window is months wide and a day of drift fits inside it. Also note <code>apt-get update</code> <b>exits 0</b> when this happens: it prints warnings, falls back to the previous index and calls it success, so an install can continue on package lists days out of date. From v2.22 stage B waits for NTP before starting and the installer detects this, waits for sync and retries.</td>
+          </tr>
+          <tr>
+            <td>Install seems to stop partway through the log</td>
+            <td>Most often it had not finished. The install is 10 to 20 minutes on a Pi 3 A+, most of it compiling the matrix bindings, and stage B allows itself an hour. Check the last line: a step in progress means it was interrupted, an <code>ERROR</code> line means it failed. Do not pull the card mid-install, which risks corrupting the filesystem. Nothing needs re-flashing either way &mdash; the setup service stays enabled until it succeeds, so putting the card back and powering on re-runs the install from the payload already on the Pi.</td>
+          </tr>
+          <tr>
+            <td>Log says <i>no network after 5 minutes</i> but the board is on your wifi</td>
+            <td>Builds before v2.17 could never pass their own connectivity check. The probe used <code>curl -f</code>, which treats any HTTP status of 400 or above as a failure, and <code>files.pythonhosted.org</code> answers 404 to a bare GET because it serves package files and has no root page. So stage B waited out its full timeout on a perfectly healthy network and then advised checking the wifi. Nothing is lost when this happens: the payload is already on the Pi. Recover without re-flashing with <code>cd ~ &amp;&amp; unzip -o /var/lib/scoreboard/payload.zip &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</code>, and update to v2.17 before preparing any more cards.</td>
+          </tr>
+          <tr>
+            <td>Card prep cannot find the boot volume</td>
+            <td>The card is not mounted, or Finder named it something other than <code>bootfs</code>. Pass it: <code>--volume /Volumes/&lt;name&gt;</code>.</td>
+          </tr>
+          <tr>
+            <td>Pi reboots over and over</td>
+            <td>The first-boot hook did not clear itself from <code>cmdline.txt</code>, which asks for a reboot on success. Mount the card and delete everything from <code>systemd.run=</code> onward, or restore <code>cmdline.txt.bak</code>.</td>
+          </tr>
+          <tr>
+            <td>One half of the panel is missing a colour</td>
+            <td>Electrical, not software. HUB75 drives the halves on separate lines (R1/G1/B1 up, R2/G2/B2 down), so a fault confined to one half is a signal line, and <code>rgb_sequence</code> cannot cause it because it remaps both halves equally. <b>On a Pi 3 A+, check the row above first</b> &mdash; a fully seated Bonnet is by far the most likely cause and no amount of swapping parts will find it. Otherwise: reseat the ribbon at both ends (it seats about a millimetre further than feels right), then the panel's other connector, then a different ribbon, then the HAT. Change one thing at a time, and if four panels and three bonnets all fail identically, stop swapping parts: the constant is the Pi.</td>
+          </tr>
+          <tr>
+            <td><code>OSError: cannot open resource</code> on fonts</td>
+            <td>A permission error wearing a misleading message. The matrix library setuids to <code>daemon</code> after claiming GPIO, and Debian made home directories <code>0750</code> in Bookworm, so <code>daemon</code> cannot traverse <code>/home/&lt;user&gt;</code>. <code>./scoreboard doctor</code> names the directories; the fix is <code>sudo chmod o+x</code> on each.</td>
+          </tr>
+          <tr>
+            <td>Many install steps fail at once</td>
+            <td>Almost always one cause, not many. Either the boot-time apt timers held the dpkg lock, or a third-party repo apt cannot verify — on Trixie that fails <i>every</i> update, so git, pip and Pillow all go down with it. Re-run <code>./install.sh --yes</code>; it now clears both before the package step.</td>
+          </tr>
+          <tr>
+            <td><code>make: No rule to make target 'build-python'</code></td>
+            <td>Pre-v2.11 installer. Upstream moved the Python bindings to scikit-build-core and cmake in February 2026 and deleted that target. Update, or build by hand: <code>sudo python3 -m pip install --break-system-packages ./matrix</code>.</td>
+          </tr>
+          <tr>
+            <td><code>REMOTE HOST IDENTIFICATION HAS CHANGED</code> after re-flashing</td>
+            <td>Expected, not an attack. A fresh card generates new SSH host keys, and DHCP often hands the new board an address a previous one used, so your Mac compares the new key against the old board's entry. Clear it and reconnect: <code>ssh-keygen -R &lt;ip&gt;</code>, then ssh again and accept the new fingerprint. You will hit this on every re-flash and every clone, so it is worth knowing rather than worrying about.</td>
+          </tr>
+          <tr>
+            <td>You are debugging a board and nothing you change has any effect</td>
+            <td>Check you are on the board you think you are. After a re-flash the new card usually lands on a different address while the old board is still powered on and still answering. <code>grep -m1 VERSION ~/scoreboard/main.py</code> and <code>uptime -p</code> settle it in two seconds: a version older than the zip you just installed, or an uptime measured in days, means you are on the previous unit.</td>
+          </tr>
+          <tr>
+            <td>Restart loop after changing a panel setting, panel dark</td>
+            <td>Almost certainly <b>parallel</b> when you meant <b>chain</b>. They sit next to each other in the settings and mean different things: <i>chain</i> is panels wired one after another off a single output, which is what a second panel is; <i>parallel</i> is separate ribbons from separate GPIO banks, and the Adafruit HAT and Bonnet break out one HUB75 connector, so it can only ever be 1 on that hardware. Asking for 2 made the library call <code>abort()</code>, killing the process with SIGABRT before it printed anything to the panel, so systemd restarted it forever. From v2.19 the board corrects an impossible value, says so in the log, and runs. On an older build, set <code>matrix.parallel</code> back to 1 and restart.</td>
+          </tr>
+          <tr>
+            <td>Sunday shows yesterday&rsquo;s college games instead of the NFL</td>
+            <td>Fixed in <b>v2.27</b>. Both leagues arrive from ESPN in the same
+            shape, so the rotation had no way to know that a finished Saturday
+            game and a live Sunday one are not equally interesting, and the
+            panel spent half its time on yesterday. The board now works out
+            which day&rsquo;s slate is current <i>from the schedule</i> &mdash; a
+            game counts as today&rsquo;s if it is live, or its kickoff falls on
+            today in your timezone, which includes games that have not started,
+            so an NFL Sunday is an NFL Sunday from midnight. Leagues with
+            nothing today drop out of the rotation entirely, along with their
+            poll pages and standings. Your own teams are the exception: a
+            favourite&rsquo;s last result still comes round, on one pass in three
+            by default, because whether OSU won is still a question on Sunday
+            morning. Both are adjustable under <i>Today&rsquo;s games only</i> and
+            <i>My teams on their off day</i>, and
+            <code>./scoreboard status</code> prints which slate the board thinks
+            it is on. Deliberately <b>not</b> a day-of-week table: that needs an
+            exception for Thanksgiving, for Friday college games, and for all of
+            bowl and playoff season, and the exceptions are what break.</td>
+          </tr>
+          <tr>
+            <td>Two panels both locked to your team&rsquo;s live game</td>
+            <td>Different cause from the row below, same look. When a favourite is playing, the board stops rotating and camps on that game &mdash; correct on one panel, where the camped game is the entire playlist, but on a chained pair that one-screen playlist went to both cells. From v2.23 the favourite is <b>pinned to the left cell</b> and the rest of the slate keeps rotating on the right, so your game stays in one place and everything else moves beside it. With more cells, at least one always keeps rotating. Turn it off entirely with <code>rotation.stay_on_live_favorite</code>.</td>
+          </tr>
+          <tr>
+            <td>Two chained panels show the same game on both</td>
+            <td>The board thinks it has one panel. HUB75 is a shift register with no back channel, so nothing on the Pi can detect how many panels are wired: the count has to be told to it once. When it is 1, the renderer draws a single 64&times;32 cell, the library clocks only 64 columns per row, and the second panel holds the same row data, which reads as a copy rather than as garbage. Fix it in the web UI under <i>Daisy chained</i>, or preseed it at card prep with <code>--panels 2</code> so a two-panel unit is right the first time it lights up. The panel nearest the Pi is <b>last</b> in display order, so if the two games come up swapped, swap the ribbon between the panels rather than changing any setting.</td>
+          </tr>
+          <tr>
+            <td>Two boards fighting over one <code>.local</code> name</td>
+            <td>A clone still carries the original's hostname, SSH host keys and machine-id. Give each one its own identity on its first boot, with the original powered off — phase 07 step 2.</td>
+          </tr>
+          <tr>
+            <td><b>Top half of the panel shows only blue</b>, or one half is missing red and green, on a Pi 3 A+</td>
+            <td>The Bonnet is seated all the way down. A Pi 3 A+ has a metal shield over its wireless module directly under where the Bonnet sits, and full seating puts the Bonnet's underside against it, shorting out signal lines. Two data pins go and the rest survive, which reads exactly like a dead panel. Fit a 2×20 extra-tall stacking header (Adafruit 1979) so the Bonnet clears it, and put a strip of electrical tape over the shield. Lifting the Bonnet by hand proves the diagnosis but will not survive being carried anywhere. This is not software: it reproduces across panels, bonnets, ribbons, supplies and operating systems.</td>
+          </tr>
+          <tr>
+            <td><code>&lt;name&gt;.local</code> does not resolve, but the board is up</td>
+            <td>mDNS is not running. Use the IP instead: on the board, <code>hostname -I</code>, and <code>whoami</code> for the account name. Then check <code>systemctl status avahi-daemon</code> &mdash; if it is dead, <code>sudo apt-get install -y avahi-daemon &amp;&amp; sudo systemctl enable --now avahi-daemon</code>. Worth fixing before a board leaves the house, because hostname access is the whole point of the handoff.</td>
+          </tr>
+          <tr>
+            <td>Logos with a single strong colour come out white or pink</td>
+            <td>Pre-v2.14 bug, and it was two bugs stacked. The fetcher preferred ESPN's <code>-dark</code> asset, which for schools like Indiana, Alabama and Texas is the mark redrawn in flat white. Then a brightness boost measured <i>luminance</i>, which weights red at 30% and blue at 11%, so crimson scored about 69 of 255 with its red channel nearly full, got multiplied by 2.5, clipped red and lifted green and blue into pink. Any logo containing a white pixel was never boosted at all, which is why only some looked wrong. Update; the installer clears the cached bitmaps, which otherwise keep the old pictures forever.</td>
+          </tr>
+          <tr>
+            <td>A college team shows an NFL team&rsquo;s logo</td>
+            <td>Fixed in v2.21.1, and it affected every shared abbreviation: CIN is the Bengals and the Bearcats, MIA the Dolphins and the Hurricanes, HOU the Texans and the Cougars. The disk cache named files from the abbreviation and size alone, so both teams wrote <code>CIN_20.png</code> and whichever was fetched first owned it. Because the clash is on disk it survived restarts, while the in-memory cache was keyed correctly and hid it inside any single run. Cache files are now keyed on the source URL. Upgrading clears the cache automatically; to force it by hand, <code>rm -rf ~/scoreboard/logo_cache</code> and restart.</td>
+          </tr>
+          <tr>
+            <td>An NFL helmet renders as a coloured smudge</td>
+            <td>Fixed in v2.21. The bundled helmets are hand-drawn at roughly 20&times;20 and stored as a 400&times;400 upscale, so every edge in them is a hard block boundary. The resize used LANCZOS, an interpolating filter meant for photographs, which averaged those blocks into one another: a five-colour helmet arrived as an orange blur. Pixel art is now sampled rather than filtered, decided by the source&rsquo;s colour count, because the averaging is still right for everything else &mdash; the Ravens mark sampled the same way comes apart into specks. The same release also trims the painted-on margin those files carry, which had been surviving the resize and leaving every helmet smaller than the marks beside it.</td>
+          </tr>
+          <tr>
+            <td>A logo is on the panel but you cannot tell what it is</td>
+            <td>Different from a mark that is too dark to see, and the reason it
+            took two tries to fix. ESPN serves two versions of most logos &mdash;
+            the real one and a <code>-dark</code> redraw for dark backgrounds
+            &mdash; and neither is the right default. Preferring the redraw
+            turned Indiana, Alabama and Texas white, because for those schools it
+            <i>is</i> the mark in flat white. Preferring the real one unless it
+            failed a legibility check was no better: the check asked for 3% of
+            pixels lit, and Cincinnati&rsquo;s Bearcats mark clears that at 4%
+            while being invisible. From <b>v2.25</b> both versions are rendered
+            and measured, and the one that reads wins. The number scored is not
+            how much of the mark is <i>lit</i> but how much is <i>solid</i>:
+            Ohio State&rsquo;s true-colour Block O measures 37% lit against 5%
+            solid, a scarlet haze with no letter in it, where its redraw is 32%
+            solid. True colour keeps a 10-point advantage, so a mark that
+            already reads is never traded away for a marginal gain.
+            <code>python3 -m tools.logo_tune CIN --league ncaaf</code> now prints
+            which version the board chose and why.</td>
+          </tr>
+          <tr>
+            <td>One specific team's logo is a smudge at 20 px</td>
+            <td>Some marks do not survive the shrink no matter the processing. Two options. Force the abbreviation in team colour by adding it to <code>display.logo_text_teams</code> in the web UI, which always reads. Or build better art: <code>python3 -m tools.logo_tune OSU --league ncaaf</code> writes a contact sheet of every treatment at panel size and magnified, then <code>--pick N</code> saves your choice to <code>logos/ncaaf/OSU.png</code>, which from then on wins over anything ESPN serves. Drop your own PNG in that folder and it works the same way.</td>
+          </tr>
+          <tr>
+            <td>A board has stopped picking up releases</td>
+            <td>Start with <code>./scoreboard doctor</code>, which now checks
+            the whole chain and flags a check older than three days &mdash; a
+            board that quietly stopped checking is a board that quietly stopped
+            being fixable, and it will not announce it. The likely causes, in
+            order: no key in <code>/etc/scoreboard/</code> because the board was
+            first installed from a release that predates this, fixed by re-running
+            <code>./install.sh --yes</code>; the recipient turned updates off;
+            the timer is not enabled; or the version it is being offered is one
+            that already failed here and is on the do-not-retry list, which
+            <code>state/update.log</code> will say in as many words. Force a run
+            with <code>./scoreboard selfupdate --force</code> to see the whole
+            sequence live.</td>
+          </tr>
+          <tr>
+            <td>A release went out and a board rolled itself back</td>
+            <td>Working as intended, and the log says why. The updater tests a
+            release in a staging directory before the live tree is touched, then
+            requires the service to come back up and report the expected version
+            on its own port; anything short of that restores the backup and
+            records the version as bad so the board does not spend every night
+            reinstalling it. Read <code>state/update.log</code> on that board, or
+            look at the <i>Updates</i> section of its web page, which shows the
+            same thing without ssh. Fix, bump the version, and publish again
+            &mdash; boards will not retry the number that failed, so a re-release
+            has to be a new version.</td>
+          </tr>
+          <tr>
+            <td><i>manifest signature does NOT verify</i> in the update log</td>
+            <td>The board is doing its job. Either the manifest was published
+            without being signed, or it was signed with a different key than the
+            one on that board. <code>./tools/release.sh</code> signs on every
+            run and verifies its own signature against the public key in the
+            repo before publishing, so the usual cause is a key that was
+            regenerated after the boards were built. There is no remote fix for
+            that by design: replacing the key is a physical act, because a
+            release that could replace the key could also replace the check.</td>
+          </tr>
+          <tr>
+            <td>Settings will not save, the config reverts, or the install half worked</td>
+            <td>Suspect the card before anything else. A microSD does not fail cleanly: it starts returning bad data, ext4 remounts itself read-only to limit the damage, and from up here that looks like four separate bugs. <code>./scoreboard doctor</code> checks this first now &mdash; read-only root, kernel I/O errors, recorded filesystem state, and whether the project directory actually accepts a write. If it flags any of them, copy <code>config.json</code> off and write a new card rather than debugging anything downstream.</td>
+          </tr>
+          <tr>
+            <td>Everything green, panel completely dark</td>
+            <td>On a non-Adafruit board, the Pi's onboard sound driver holds the PWM peripheral the panel needs, and the library <b>refuses to start</b> rather than running badly. It says so on stderr, which for a service means the journal, so the install looks perfect. Fix: <code>echo 'dtparam=audio=off' | sudo tee -a /boot/firmware/config.txt</code> then reboot. <code>./scoreboard doctor</code> now flags it.</td>
+          </tr>
+          <tr>
+            <td>Panel dark on a HAT that is not Adafruit's</td>
+            <td>Wrong pin mapping. Sweep them: <code>regular</code> (most generic and clone boards, and hzeller's own reference wiring), <code>adafruit-hat</code>, <code>adafruit-hat-pwm</code> (Adafruit with the pin-4-to-18 jumper bridged), <code>classic</code>. Disable onboard audio first, or the two PWM mappings will refuse to run and you will wrongly rule them out.</td>
+          </tr>
+          <tr>
+            <td>The board reports a colour depth or slowdown it is not using</td>
+            <td>Fixed in <b>v2.26</b>, and it was invisible from the outside,
+            which is the interesting part. Each board model has a tuning
+            profile &mdash; a Zero W is set to colour depth 8 and slowdown 0,
+            the settings that keep it from flickering &mdash; and the web page's
+            <i>This board</i> panel read those values back correctly. Nothing
+            passed them to the panel. Frame rate, refresh cadence and logo
+            prefetch all resolved through the profile properly; the two values
+            that reach the matrix library were read straight from
+            <code>config.json</code> with a hardcoded fallback behind them, so a
+            board with those fields left blank ran the library's defaults of 11
+            and 1 while displaying 8 and 0. Mostly harmless on a Pi 3, whose
+            profile matches the defaults anyway. On a Zero W it meant the one
+            board that genuinely needs the lower settings was the one not
+            getting them.</td>
+          </tr>
+          <tr>
+            <td>Panel shows random colours at power-on, like a scrambled channel</td>
+            <td>For the first instant, expected. A HUB75 panel is a chain of
+            shift registers with no reset line and no defined power-on state, so
+            until the Pi has clocked a full frame into it the panel displays
+            whatever the registers happened to come up holding. The board takes a
+            few seconds to start, and that gap is what you are looking at. If it
+            <b>persists</b> once the service is up, the first thing to check is
+            <code>matrix.gpio_slowdown</code>, and to <b>lower</b> it rather
+            than raise it. Clear the field entirely and let the board choose.
+            A high slowdown pads every GPIO write, which stretches the refresh
+            cycle until the panel is being redrawn too slowly to look like a
+            picture &mdash; and because the setting sounds like a safety margin,
+            it is the one people turn up when chasing flicker, which makes the
+            display dramatically worse in a way that looks nothing like a
+            settings problem. From v2.26 the board warns in the log when this
+            value is above 2, and <code>./scoreboard doctor</code> flags it.
+            If it is already clear, reseat the HAT squarely.</td>
+          </tr>
+          <tr>
+            <td>Panel flickers or the brightness shimmers</td>
+            <td>Four levers, and they are not equally good. In order:
+            <b>(1) Colour depth.</b> This is the flicker setting. Each bit you
+            drop roughly halves the time a frame takes, so 8 or 9 instead of 11
+            buys a large refresh increase and costs you banding in gradients,
+            which a scoreboard drawing flat colours and text does not have.
+            <b>(2) Reserve a core.</b> On any quad-core Pi, append
+            <code>isolcpus=3</code> to the single line in
+            <code>/boot/firmware/cmdline.txt</code> and reboot. The refresh
+            runs in a thread that has to hit its timing or the panel dims and
+            shimmers; this gives it a core nothing else can touch. The
+            library's author recommends it outright.
+            <b>(3) The hardware mod.</b> On an Adafruit HAT or Bonnet in its
+            default wiring, the output-enable line sits on GPIO 4, which is not
+            a hardware-PWM pin, so the library toggles it in software. Its own
+            documentation is blunt about the consequence: random brightness
+            glitches. One wire between GPIO 4 and GPIO 18 (the Bonnet has a
+            solder pad for it) moves it onto the PWM hardware. Then set Wiring
+            to <b>Adafruit HAT, PWM mod</b> and add
+            <code>dtparam=audio=off</code> to
+            <code>/boot/firmware/config.txt</code>, because GPIO 18 is also the
+            onboard audio pin and the library refuses to start while the sound
+            driver holds it. This is the actual fix. The other three are
+            working around not having done it.
+            <b>(4) GPIO slowdown: leave it alone.</b> It is the obvious-looking
+            knob and it is the wrong one, for the reasons in the row above.
+            <code>./scoreboard doctor</code> now checks 2, 3 and 4 for you.</td>
+          </tr>
+          <tr>
+            <td>Flicker in a regular pulse, about once a minute</td>
+            <td>Different problem with a different cause: something else on the
+            Pi is stealing the refresh thread's timing on a schedule. The
+            library's docs name the usual suspects, and they are mundane
+            &mdash; an NTP adjustment, a cron job, even <code>top</code> left
+            running in another window produces a faint tick every time it
+            redraws. Constant shimmer is a refresh-rate problem and belongs to
+            the row above; a rhythm points at another process. Reserving a core
+            with <code>isolcpus=3</code> is the fix that addresses both, since
+            it removes the contention rather than the contender.</td>
+          </tr>
+          <tr>
+            <td>Web page unreachable, panel fine</td>
+            <td>Flask installed for the wrong user. Check with <code>sudo python3 -c "import flask"</code>.</td>
+          </tr>
+          <tr>
+            <td>Saving from the web page is denied</td>
+            <td>The matrix library drops privileges to <code>daemon</code>. The install script sets group ownership for this; re-run it.</td>
+          </tr>
+          <tr>
+            <td>Game times off by hours</td>
+            <td>Pi is on UTC. <code>sudo timedatectl set-timezone America/New_York</code>.</td>
+          </tr>
+          <tr>
+            <td>No access point at their house</td>
+            <td>A saved network survived the reset. Re-run <code>prepare-for-gift.sh</code> and do not boot on your wifi afterwards.</td>
+          </tr>
+          <tr>
+            <td>Board shows OFFLINE briefly at boot</td>
+            <td>Normal on a Zero. Wifi associates after the service starts and it fills in on the next refresh.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Progress is saved in this browser only. <b>New unit</b> clears it for the next build.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var KEY = 'scoreboard-build-v1';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.task input'));
+  var fill = document.getElementById('fill');
+  var count = document.getElementById('count');
+
+  function read() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function write(state) {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function paint() {
+    var done = boxes.filter(function (b) { return b.checked; }).length;
+    count.textContent = done + ' / ' + boxes.length;
+    fill.style.width = boxes.length ? (done / boxes.length * 100) + '%' : '0';
+  }
+
+  var saved = read();
+  boxes.forEach(function (box) {
+    if (saved[box.id]) box.checked = true;
+    box.addEventListener('change', function () {
+      var state = read();
+      if (box.checked) { state[box.id] = 1; } else { delete state[box.id]; }
+      write(state);
+      paint();
+    });
+  });
+  paint();
+
+  document.getElementById('reset').addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; });
+    write({});
+    paint();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pre = btn.parentNode.querySelector('pre');
+      // Strip the trailing comments so a paste is runnable as-is.
+      var text = Array.prototype.slice.call(pre.childNodes).map(function (n) {
+        return (n.nodeType === 1 && n.className === 'c') ? '' : n.textContent;
+      }).join('').split('\n').map(function (l) { return l.replace(/\s+$/, ''); })
+        .filter(function (l, i, a) { return l || (i && i < a.length - 1); }).join('\n');
+
+      var ok = function () {
+        btn.textContent = 'Copied';
+        btn.classList.add('done');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1400);
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(ok, function () {});
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); ok(); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+    });
+  });
+})();
+</script>

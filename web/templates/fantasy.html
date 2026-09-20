@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>Fantasy</title>
+<style>
+  :root {
+    --bg:#0d1117; --panel:#161b22; --line:#262d36;
+    --text:#e6edf3; --dim:#8b949e; --accent:#ffcd28; --ok:#3fb950; --bad:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:0 0 110px; }
+  header { position:sticky; top:0; z-index:10; background:rgba(13,17,23,.95);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+    padding:14px 16px; display:flex; align-items:center; gap:12px; }
+  header a { color:var(--dim); text-decoration:none; font-size:22px; line-height:1; }
+  header h1 { font-size:17px; margin:0; }
+  .wrap { max-width:640px; margin:0 auto; padding:16px; }
+  section { background:var(--panel); border:1px solid var(--line);
+    border-radius:12px; padding:16px; margin-bottom:14px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.09em;
+    color:var(--dim); margin:0 0 12px; }
+  p { margin:0 0 12px; }
+  .sub { color:var(--dim); font-size:13.5px; }
+  label { display:block; font-size:13px; color:var(--dim); margin-bottom:6px; }
+  input[type=text], select, textarea {
+    width:100%; background:#0b0f14; color:var(--text); border:1px solid var(--line);
+    border-radius:9px; padding:11px 12px; font-size:16px; font-family:inherit; }
+  textarea { resize:vertical; min-height:64px;
+    font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); }
+  button.btn { background:#21262d; color:var(--text); border:1px solid var(--line);
+    border-radius:9px; padding:11px 16px; font-size:15px; cursor:pointer; }
+  button.btn.primary { background:var(--accent); color:#1a1200;
+    border-color:var(--accent); font-weight:600; }
+  button.btn:disabled { opacity:.45; cursor:default; }
+  .row { display:flex; gap:10px; align-items:center; }
+  .row .btn { flex:none; }
+  .row input { flex:1; }
+  .state { border-radius:9px; padding:12px 14px; font-size:14px; margin-top:12px;
+    display:none; }
+  .state.on { display:block; }
+  .state.good { background:rgba(63,185,80,.12); border:1px solid rgba(63,185,80,.4); }
+  .state.warn { background:rgba(255,205,40,.1); border:1px solid rgba(255,205,40,.4); }
+  .state.err  { background:rgba(248,81,73,.12); border:1px solid rgba(248,81,73,.4); }
+  .state b { display:block; margin-bottom:3px; }
+  ol.steps { margin:0; padding-left:20px; font-size:14px; color:var(--dim); }
+  ol.steps li { margin-bottom:9px; }
+  ol.steps b { color:var(--text); font-weight:600; }
+  .tabs { display:flex; gap:6px; margin-bottom:14px; }
+  .tab { flex:1; text-align:center; padding:8px; border-radius:8px; cursor:pointer;
+    border:1px solid var(--line); font-size:13px; color:var(--dim); background:#0b0f14; }
+  .tab.on { border-color:var(--accent); color:var(--text); }
+  .field { margin-bottom:14px; }
+  .toggle { display:flex; align-items:center; justify-content:space-between;
+    padding:9px 0; border-bottom:1px solid var(--line); }
+  .toggle:last-child { border-bottom:0; }
+  .switch { position:relative; width:46px; height:27px; flex:none; }
+  .switch input { opacity:0; width:100%; height:100%; margin:0; }
+  .switch span { position:absolute; inset:0; background:#2b323b; border-radius:27px;
+    transition:.15s; pointer-events:none; }
+  .switch span::after { content:""; position:absolute; width:21px; height:21px;
+    left:3px; top:3px; background:#fff; border-radius:50%; transition:.15s; }
+  .switch input:checked + span { background:var(--ok); }
+  .switch input:checked + span::after { transform:translateX(19px); }
+  footer { position:fixed; bottom:0; left:0; right:0; background:rgba(13,17,23,.97);
+    backdrop-filter:blur(8px); border-top:1px solid var(--line);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom)); }
+  footer .inner { max-width:640px; margin:0 auto; display:flex; gap:10px; }
+  footer .btn { flex:1; }
+  .toast { position:fixed; bottom:86px; left:50%; transform:translateX(-50%);
+    background:var(--ok); color:#04250f; padding:9px 18px; border-radius:20px;
+    font-size:14px; font-weight:600; opacity:0; transition:opacity .2s;
+    pointer-events:none; }
+  .toast.show { opacity:1; }
+  .toast.err { background:var(--bad); color:#fff; }
+  .muted { color:var(--dim); font-size:13px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <a href="/" aria-label="Back">&#8249;</a>
+  <h1>Fantasy</h1>
+</header>
+
+<div class="wrap">
+
+  <!-- step 1: the league -->
+  <section>
+    <h2>Your league</h2>
+    <p class="sub">Open your league on ESPN, copy the address, and paste it
+      here. We work out the rest.</p>
+    <div class="row">
+      <input type="text" id="leagueUrl" placeholder="Paste your ESPN league link"
+             autocomplete="off" inputmode="url">
+      <button class="btn" id="check">Check</button>
+    </div>
+    <div class="state" id="leagueState"></div>
+  </section>
+
+  <!-- step 2: only appears if the league is private -->
+  <section id="authSection" class="hidden">
+    <h2>Sign in to ESPN</h2>
+    <p class="sub">Your league is private, so ESPN will not share it without
+      proof you are a member. ESPN offers no proper login for this, so the
+      one-time workaround is copying two values from your browser. You only do
+      this once, and only on a computer.</p>
+
+    <div class="tabs">
+      <div class="tab on" data-browser="chrome">Chrome / Edge</div>
+      <div class="tab" data-browser="safari">Safari</div>
+      <div class="tab" data-browser="firefox">Firefox</div>
+    </div>
+
+    <ol class="steps" id="steps"></ol>
+
+    <div class="field" style="margin-top:16px">
+      <label for="swid">SWID</label>
+      <input type="text" id="swid" placeholder="{XXXXXXXX-XXXX-...}"
+             autocomplete="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="espnS2">espn_s2</label>
+      <textarea id="espnS2" placeholder="A long string of letters and numbers"
+                autocomplete="off" spellcheck="false"></textarea>
+    </div>
+    <button class="btn primary" id="saveCreds" style="width:100%">Save and check again</button>
+    <div class="state" id="authState"></div>
+    <p class="muted" style="margin-top:14px">
+      These are stored on this board only, in a file the settings page never
+      returns. They are not sent anywhere else. Anyone with physical access to
+      the board could read them, the same as any device in your house.
+      <a href="#" id="forget" style="color:var(--bad)">Forget them</a>
+    </p>
+  </section>
+
+  <!-- step 3: which team is yours -->
+  <section id="teamSection" class="hidden">
+    <h2>Your team</h2>
+    <p class="sub" id="teamBlurb">Which one is you?</p>
+    <select id="teamSelect"></select>
+  </section>
+
+  <!-- step 4: what to show -->
+  <section id="screensSection" class="hidden">
+    <h2>What to show</h2>
+    <div class="toggle">
+      <label style="margin:0">My matchup<span class="sub" style="display:block">
+        Live score against this week's opponent</span></label>
+      <span class="switch"><input type="checkbox" id="showMatchup" checked><span></span></span>
+    </div>
+    <div class="toggle">
+      <label style="margin:0">League standings<span class="sub" style="display:block">
+        Where everyone sits</span></label>
+      <span class="switch"><input type="checkbox" id="showStandings" checked><span></span></span>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="inner">
+    <button class="btn" id="disable">Turn off</button>
+    <button class="btn primary" id="save" disabled>Save</button>
+  </div>
+</footer>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let TEAMS = [];
+let READY = false;
+
+const STEPS = {
+  chrome: [
+    'On a computer, sign in at <b>fantasy.espn.com</b>.',
+    'Press <b>F12</b> (or Cmd+Option+I on a Mac) to open developer tools.',
+    'Choose the <b>Application</b> tab, then <b>Cookies</b> on the left, then <b>https://fantasy.espn.com</b>.',
+    'Find the rows named <b>SWID</b> and <b>espn_s2</b>, and copy each Value into the boxes below.'
+  ],
+  safari: [
+    'On a Mac, sign in at <b>fantasy.espn.com</b>.',
+    'Turn on the develop menu: <b>Safari &rsaquo; Settings &rsaquo; Advanced &rsaquo; Show features for web developers</b>.',
+    'Press <b>Cmd+Option+I</b>, then choose the <b>Storage</b> tab and <b>Cookies</b>.',
+    'Find <b>SWID</b> and <b>espn_s2</b> and copy each value into the boxes below.'
+  ],
+  firefox: [
+    'On a computer, sign in at <b>fantasy.espn.com</b>.',
+    'Press <b>F12</b> to open developer tools.',
+    'Choose the <b>Storage</b> tab, then <b>Cookies</b>, then <b>https://fantasy.espn.com</b>.',
+    'Find <b>SWID</b> and <b>espn_s2</b> and copy each value into the boxes below.'
+  ]
+};
+
+function drawSteps(browser) {
+  $('#steps').innerHTML = STEPS[browser].map(s => `<li>${s}</li>`).join('');
+}
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+    tab.classList.add('on');
+    drawSteps(tab.dataset.browser);
+  };
+});
+drawSteps('chrome');
+
+function show(el, kind, title, body) {
+  const node = $(el);
+  node.className = 'state on ' + kind;
+  node.innerHTML = `<b>${title}</b>${body ? `<span class="sub">${body}</span>` : ''}`;
+}
+function hide(el) { $(el).className = 'state'; }
+
+function toast(msg, bad) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' err' : '');
+  setTimeout(() => (t.className = 'toast'), 1900);
+}
+
+function fillTeams(teams, selectedId) {
+  TEAMS = teams || [];
+  const sel = $('#teamSelect');
+  sel.innerHTML = '<option value="">Choose your team</option>' +
+    TEAMS.map(t => `<option value="${t.id}">${t.name} (${t.record})</option>`).join('');
+  // A private league tells us which team is ours from the sign-in, so it is
+  // preselected and this section is really just a confirmation.
+  const mine = TEAMS.find(t => t.mine);
+  const pick = selectedId || (mine && mine.id);
+  if (pick) sel.value = String(pick);
+  $('#teamSection').classList.toggle('hidden', !TEAMS.length);
+  $('#teamBlurb').textContent = mine
+    ? 'We found your team from your ESPN sign-in.'
+    : 'Public leagues do not say who you are, so pick your team.';
+}
+
+function ready(on) {
+  READY = on;
+  $('#save').disabled = !on;
+  $('#screensSection').classList.toggle('hidden', !on);
+}
+
+async function check(url) {
+  const btn = $('#check');
+  btn.disabled = true; btn.textContent = 'Checking';
+  hide('#leagueState');
+  try {
+    const res = await fetch('/api/fantasy/check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ league_url: url })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      show('#leagueState', 'good', d.name || 'League found',
+           d.private ? 'Private league, signed in.' : 'Public league, no sign-in needed.');
+      $('#authSection').classList.toggle('hidden', !d.private);
+      fillTeams(d.teams, null);
+      ready(true);
+    } else if (d.needs_auth) {
+      show('#leagueState', 'warn', 'This league is private',
+           'Follow the steps below once and we will remember it.');
+      $('#authSection').classList.remove('hidden');
+      ready(false);
+    } else {
+      show('#leagueState', 'err', d.error || 'Could not read that league', '');
+      ready(false);
+    }
+  } catch (e) {
+    show('#leagueState', 'err', 'Could not reach the board', '');
+  }
+  btn.disabled = false; btn.textContent = 'Check';
+}
+
+$('#check').onclick = () => {
+  const url = $('#leagueUrl').value.trim();
+  if (url) check(url);
+};
+$('#leagueUrl').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('#check').click(); }
+});
+
+$('#saveCreds').onclick = async () => {
+  const btn = $('#saveCreds');
+  btn.disabled = true; btn.textContent = 'Checking';
+  hide('#authState');
+  try {
+    const res = await fetch('/api/fantasy/credentials', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        swid: $('#swid').value.trim(),
+        espn_s2: $('#espnS2').value.trim(),
+        league_url: $('#leagueUrl').value.trim()
+      })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      show('#authState', 'good', 'Signed in', d.name ? 'Found ' + d.name : '');
+      fillTeams(d.teams, null);
+      ready(true);
+    } else {
+      show('#authState', 'err', d.error || 'ESPN would not accept those',
+           'Check you copied the whole value, including any braces on SWID.');
+    }
+  } catch (e) {
+    show('#authState', 'err', 'Could not reach the board', '');
+  }
+  btn.disabled = false; btn.textContent = 'Save and check again';
+};
+
+$('#forget').onclick = async e => {
+  e.preventDefault();
+  await fetch('/api/fantasy/credentials', { method: 'DELETE' });
+  $('#swid').value = ''; $('#espnS2').value = '';
+  toast('Sign-in forgotten');
+};
+
+$('#save').onclick = async () => {
+  const res = await fetch('/api/fantasy/save', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      league_url: $('#leagueUrl').value.trim(),
+      team_id: $('#teamSelect').value || null,
+      enabled: true,
+      show_matchup: $('#showMatchup').checked,
+      show_standings: $('#showStandings').checked
+    })
+  });
+  const d = await res.json();
+  toast(d.ok ? 'Saved, it will appear on the board shortly' : (d.error || 'Failed'), !d.ok);
+};
+
+$('#disable').onclick = async () => {
+  await fetch('/api/fantasy/save', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ league_url: '', enabled: false })
+  });
+  toast('Fantasy turned off');
+  ready(false);
+};
+
+(async function load() {
+  try {
+    const s = await (await fetch('/api/fantasy')).json();
+    $('#leagueUrl').value = s.league_url || '';
+    $('#showMatchup').checked = s.show_matchup;
+    $('#showStandings').checked = s.show_standings;
+    if (s.has_credentials) {
+      $('#swid').placeholder = 'Saved (' + (s.credential_hint || 'hidden') + ')';
+      $('#espnS2').placeholder = 'Saved';
+    }
+    if (s.needs_auth) {
+      $('#authSection').classList.remove('hidden');
+      show('#leagueState', 'warn', 'Your ESPN sign-in expired',
+           'Repeat the steps below to get fantasy back.');
+    } else if (s.league_id) {
+      check(s.league_url || s.league_id);
+    }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

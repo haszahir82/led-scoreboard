@@ -1,0 +1,17 @@
+[Unit]
+Description=Nightly scoreboard update check
+
+[Timer]
+# Local time, deliberately: the quiet hour that matters is the one in the house
+# the board is sitting in.
+OnCalendar=*-*-* 04:00:00
+# Four boards should not all hit the release host in the same second, and more
+# importantly a failure should not recur at exactly the same moment every night.
+RandomizedDelaySec=45m
+# A board that was unplugged or asleep at 4am checks when it next comes up,
+# rather than waiting a full day. This is the difference between "updates
+# nightly" and "updates nightly if it happens to be on".
+Persistent=true
+
+[Install]
+WantedBy=timers.target

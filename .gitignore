@@ -1,0 +1,15 @@
+config.json
+config.json.tmp
+logo_cache/
+fixtures/
+out/
+emulator_config.json
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+fonts/4x6.pil
+fonts/4x6.pbm
+# Everything under state/ belongs to one board: its secrets, its update log,
+# its rotation bookkeeping. None of it is source.
+state/
