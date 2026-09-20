@@ -230,7 +230,10 @@ cmd_doctor() {
   # sound driver holds the peripheral. It says so on stderr, which on a service
   # means the journal, which means nobody sees it: the panel is just dark.
   MAPPING="$(python3 -c "import json;print(json.load(open('config.json'))['matrix'].get('gpio_mapping',''))" 2>/dev/null || echo "")"
-  if lsmod 2>/dev/null | grep -q snd_bcm2835; then
+  # Captured, not piped: pipefail plus grep -q's early exit can report a
+  # failure caused by the match itself.
+  LSMOD="$(lsmod 2>/dev/null || true)"
+  if grep -q snd_bcm2835 <<<"$LSMOD"; then
     case "$MAPPING" in
       regular|adafruit-hat-pwm|classic)
         bad "onboard sound is loaded and blocks mapping '$MAPPING'"

@@ -170,7 +170,13 @@ step "apt install" sudo apt-get install -y \
 
 say "Python dependencies (for root, which is what runs the board)"
 PIP_FLAGS=()
-if sudo python3 -m pip install --help 2>/dev/null | grep -q break-system-packages; then
+# Captured rather than piped straight into grep -q. With `set -o pipefail`,
+# grep -q exits on its first match and closes the pipe, which can kill the
+# writer with SIGPIPE and make the pipeline report failure *because* the
+# pattern matched. It survives here only because pip's help text fits in the
+# pipe buffer, which is not a guarantee worth relying on.
+PIP_HELP="$(sudo python3 -m pip install --help 2>/dev/null || true)"
+if grep -q break-system-packages <<<"$PIP_HELP"; then
   PIP_FLAGS+=(--break-system-packages)
 fi
 if ! sudo python3 -m pip --version >/dev/null 2>&1; then
@@ -390,7 +396,8 @@ else
   # being loaded by anything else.
   printf 'blacklist snd_bcm2835\n' \
     | sudo tee /etc/modprobe.d/blacklist-scoreboard-snd.conf >/dev/null
-  if lsmod 2>/dev/null | grep -q snd_bcm2835; then
+  LSMOD="$(lsmod 2>/dev/null || true)"
+  if grep -q snd_bcm2835 <<<"$LSMOD"; then
     warn "takes effect on the next reboot"
     echo "      until then, PWM mappings (regular, adafruit-hat-pwm) will refuse"
     echo "      to start and the panel stays dark. Run: sudo reboot"
@@ -568,7 +575,8 @@ elif [[ -n "$WITH_COMITUP" ]] || ask "Install it? Needed only for boards you giv
     # its own, so an unusable Comitup source gets removed rather than left to
     # break the next install.
     if ! sudo apt-get update >/dev/null 2>&1; then
-      if sudo apt-get update 2>&1 | grep -qi 'comitup'; then
+      APT_OUT="$(sudo apt-get update 2>&1 || true)"
+      if grep -qi 'comitup' <<<"$APT_OUT"; then
         warn "the Comitup repo is breaking apt; removing it"
         sudo rm -f /etc/apt/sources.list.d/comitup.list \
                    /etc/apt/sources.list.d/davesteele-comitup*.list

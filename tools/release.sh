@@ -17,10 +17,23 @@
 #   ./tools/release.sh beta                  publish the current commit to beta
 #   ./tools/release.sh stable --promote      copy whatever beta is on to stable
 #   ./tools/release.sh beta --dry-run        build and sign, publish nothing
+#   ./tools/release.sh beta --skip-tests     publish without running them here
+#
+# The tests run twice by design: here, before anything is published, and again
+# on each board against the downloaded release before it replaces a working
+# install. --skip-tests drops the first of those, not the second, so a broken
+# release still cannot land on a board -- it just wastes a download finding out.
 #
 # First time only:
 #
 #   ./tools/release.sh --init-key ~/.scoreboard/release-key.pem
+#
+#   python3 -m venv ~/.scoreboard/venv
+#   ~/.scoreboard/venv/bin/pip install -q requests Pillow Flask pytz tzlocal
+#
+# The venv is what lets this machine run the test suite. It is picked up
+# automatically if it exists; without it, publishing still works but you have to
+# pass --skip-tests and let the boards do the checking.
 #
 # Keep that private key off the boards, out of the repo, and backed up
 # somewhere you will still have it in two years. Losing it means no board can
@@ -79,14 +92,22 @@ CHANNEL="${1:-}"
 [[ "$CHANNEL" == "beta" || "$CHANNEL" == "stable" ]] \
   || die "Usage: $0 <beta|stable> [--promote] [--dry-run]   (or --init-key)"
 
-DRY=0; PROMOTE=0
+DRY=0; PROMOTE=0; SKIP_TESTS=0
 for arg in "${@:2}"; do
   case "$arg" in
-    --dry-run) DRY=1 ;;
-    --promote) PROMOTE=1 ;;
+    --dry-run)    DRY=1 ;;
+    --promote)    PROMOTE=1 ;;
+    --skip-tests) SKIP_TESTS=1 ;;
     *) die "unknown option: $arg" ;;
   esac
 done
+
+# Which python runs the test suite. The board has its dependencies installed by
+# install.sh; a Mac used only for publishing has no reason to, and a missing
+# library there is not a failing test. A venv keeps them out of the system
+# python, which recent macOS and Homebrew both refuse to let pip touch anyway.
+TEST_PY="python3"
+[[ -x "$HOME/.scoreboard/venv/bin/python3" ]] && TEST_PY="$HOME/.scoreboard/venv/bin/python3"
 
 [[ -f "$KEY" ]] || die "no signing key at $KEY. Run: $0 --init-key"
 [[ -f "$MANIFEST" ]] || printf '{"schema":1,"channels":{}}\n' > "$MANIFEST"
@@ -169,12 +190,44 @@ SETUP
 
   # A release that cannot pass its own tests is one the boards would download
   # and reject anyway. Find out here, before anything is published.
+  #
+  # "Could not run" and "ran and failed" are different answers and used to get
+  # the same message. A publishing machine has no reason to have the board's
+  # runtime installed, so a missing library was reported as a broken release,
+  # which is both wrong and unhelpful: the fix is one command and the message
+  # did not say so.
   rm -rf "$DIST"; mkdir -p "$DIST"
-  if python3 -m tools.test_scoreboard >"$DIST/tests.log" 2>&1; then
+  if [[ $SKIP_TESTS -eq 1 ]]; then
+    bad "skipping the self-tests at your request"
+    echo "      Each board still runs them against the download before it"
+    echo "      installs anything, so this risks a wasted round trip rather"
+    echo "      than a broken board."
+  elif "$TEST_PY" -m tools.test_scoreboard >"$DIST/tests.log" 2>&1; then
     ok "self-tests pass"
+  elif grep -q "ModuleNotFoundError" "$DIST/tests.log"; then
+    MISSING="$(grep -o "No module named '[^']*'" "$DIST/tests.log" \
+      | head -1 | sed "s/.*'\(.*\)'/\1/")"
+    bad "the tests could not run here: no module named '${MISSING:-?}'"
+    cat <<'SETUP' >&2
+
+  Not a broken release -- this Mac just does not have the board's runtime.
+  Set up a virtual environment once and every future release will use it:
+
+      python3 -m venv ~/.scoreboard/venv
+      ~/.scoreboard/venv/bin/pip install -q requests Pillow Flask pytz tzlocal
+
+  A venv rather than a plain pip install because recent macOS and Homebrew
+  both refuse to let pip write to the system python.
+
+  Or publish without testing here, and let the boards do it:
+
+      ./tools/release.sh CHANNEL --skip-tests
+
+SETUP
+    exit 1
   else
     tail -20 "$DIST/tests.log" >&2
-    die "self-tests fail; not publishing"
+    die "the self-tests ran and failed; not publishing"
   fi
 
   ZIPNAME="led-scoreboard-v$VERSION.zip"
@@ -196,9 +249,18 @@ SETUP
   #   tag rather than from whatever happened to be on this laptop.
   git archive --format=zip --prefix=scoreboard/ -o "$DIST/$ZIPNAME" HEAD \
     || die "git archive failed"
-  unzip -l "$DIST/$ZIPNAME" | grep -q 'scoreboard/main.py' \
+
+  # Listed once into a variable rather than piped into grep twice, and that is
+  # not a style choice. `set -o pipefail` is on, and `grep -q` exits the moment
+  # it matches, which closes the pipe under unzip and can make unzip die of
+  # SIGPIPE. The pipeline then reports unzip's failure, so the check fails
+  # *because* the pattern was found -- intermittently, depending on whether
+  # unzip had finished writing. It cost an hour to find once; it does not get
+  # to happen twice.
+  LISTING="$(unzip -l "$DIST/$ZIPNAME")" || die "cannot read the archive back"
+  grep -q 'scoreboard/main.py' <<<"$LISTING" \
     || die "the archive does not contain scoreboard/main.py"
-  unzip -l "$DIST/$ZIPNAME" | grep -q 'scoreboard/updates/pubkey.pem' \
+  grep -q 'scoreboard/updates/pubkey.pem' <<<"$LISTING" \
     || die "the archive has no updates/pubkey.pem, so a board installed from it could never verify a release. Commit the public key first."
   ok "$ZIPNAME  ($(du -h "$DIST/$ZIPNAME" | awk '{print $1}'))"
 
