@@ -72,6 +72,18 @@ if [[ -f "$BOOT/scoreboard-panels.txt" ]]; then
   log "panel count preseeded"
 fi
 
+# Self-update settings. Carried off the card the same way as the name and the
+# panel count, so a gift board comes up already able to receive a release
+# rather than needing somebody talked through a settings page.
+if [[ -f "$BOOT/scoreboard-manifest-url.txt" ]]; then
+  cp "$BOOT/scoreboard-manifest-url.txt" "$STAGING/manifest-url.txt"
+  log "release channel preseeded"
+fi
+if [[ -f "$BOOT/scoreboard-channel.txt" ]]; then
+  cp "$BOOT/scoreboard-channel.txt" "$STAGING/channel.txt"
+  log "update channel preseeded"
+fi
+
 INSTALL_ARGS="--yes"
 [[ -f "$BOOT/scoreboard-no-comitup" ]] && INSTALL_ARGS="$INSTALL_ARGS --no-comitup"
 
@@ -315,6 +327,18 @@ if [[ -f "$STAGING/panels.txt" ]]; then
     > "$USER_HOME/scoreboard/state/preseed-panels.txt"
 fi
 
+# These two go to install.sh as flags rather than through state/, because the
+# installer has to have them before it decides whether to arm the nightly
+# timer -- a board that learned its release channel afterwards would sit there
+# configured and never checking.
+EXTRA_ARGS=""
+if [[ -f "$STAGING/manifest-url.txt" ]]; then
+  EXTRA_ARGS="$EXTRA_ARGS --manifest-url $(head -1 "$STAGING/manifest-url.txt")"
+fi
+if [[ -f "$STAGING/channel.txt" ]]; then
+  EXTRA_ARGS="$EXTRA_ARGS --channel $(head -1 "$STAGING/channel.txt")"
+fi
+
 [[ -d "$USER_HOME/scoreboard/state" ]] \
   && chown -R "$USER_NAME": "$USER_HOME/scoreboard/state"
 
@@ -327,8 +351,8 @@ fi
 # which the board can perfectly well do for itself.
 STATUS=1
 for attempt in 1 2; do
-  log "running install.sh $* (attempt $attempt)"
-  runuser -l "$USER_NAME" -c "cd '$USER_HOME/scoreboard' && ./install.sh $*" 2>&1 \
+  log "running install.sh $* $EXTRA_ARGS (attempt $attempt)"
+  runuser -l "$USER_NAME" -c "cd '$USER_HOME/scoreboard' && ./install.sh $* $EXTRA_ARGS" 2>&1 \
     | tee -a "$LOG"
   STATUS=${PIPESTATUS[0]}
   [[ $STATUS -eq 0 ]] && break

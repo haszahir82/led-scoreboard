@@ -37,6 +37,8 @@ ZIP=""
 VOLUME=""
 BOARD_NAME=""
 PANELS=""
+MANIFEST_URL=""
+CHANNEL=""
 NO_COMITUP=0
 FORCE=0
 WIFI_SSID=""
@@ -52,6 +54,8 @@ while [[ $# -gt 0 ]]; do
     --volume)      VOLUME="${2:-}"; shift ;;
     --name)        BOARD_NAME="${2:-}"; shift ;;
     --panels)      PANELS="${2:-}"; shift ;;
+    --manifest-url) MANIFEST_URL="${2:-}"; shift ;;
+    --channel)     CHANNEL="${2:-}"; shift ;;
     --no-comitup)  NO_COMITUP=1 ;;
     --force)       FORCE=1 ;;
     --wifi)        WIFI_SSID="${2:-}"; shift ;;
@@ -348,6 +352,26 @@ ok "first-boot script copied"
 # here means a two-panel gift unit is correct the first time it lights up,
 # rather than showing the same game twice until someone finds a numeric field
 # in the settings page.
+# Where this board should look for releases. Preseeding it is what makes a gift
+# card arrive already able to be updated: the alternative is talking somebody
+# through pasting a URL into a settings page, on a board you gave them because
+# you did not want them touching settings pages.
+if [[ -n "$MANIFEST_URL" ]]; then
+  if [[ "$MANIFEST_URL" == https://* ]]; then
+    printf '%s\n' "$MANIFEST_URL" > "$VOLUME/scoreboard-manifest-url.txt"
+    ok "release channel preseeded"
+  else
+    die "--manifest-url must be an https URL (got '$MANIFEST_URL')"
+  fi
+fi
+if [[ -n "$CHANNEL" ]]; then
+  case "$CHANNEL" in
+    stable|beta) printf '%s\n' "$CHANNEL" > "$VOLUME/scoreboard-channel.txt"
+                 ok "update channel preseeded: $CHANNEL" ;;
+    *) die "--channel takes stable or beta (got '$CHANNEL')" ;;
+  esac
+fi
+
 if [[ -n "$PANELS" ]]; then
   if [[ "$PANELS" =~ ^[1-8]$ ]]; then
     printf '%s\n' "$PANELS" > "$VOLUME/scoreboard-panels.txt"

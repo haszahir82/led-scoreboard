@@ -247,6 +247,15 @@ fi
 # ---------------------------------------------------------------- publish
 
 head_ "Publishing"
+
+# Order matters here, and it is the opposite of the obvious one. The manifest is
+# the switch that turns a release on: the moment it is pushed, every board on
+# that channel will fetch whatever URL it names. So the asset goes up first, the
+# URL is confirmed to resolve, and only then is the manifest pushed. Done the
+# other way round, a failed or forgotten upload leaves four boards downloading a
+# 404 every night -- harmless, because they verify before installing, but it
+# fails in the one place nobody is looking.
+
 if [[ $PROMOTE -eq 0 ]]; then
   if command -v gh >/dev/null 2>&1; then
     if gh release view "v$VERSION" >/dev/null 2>&1; then
@@ -257,16 +266,49 @@ if [[ $PROMOTE -eq 0 ]]; then
     fi
     ok "release asset uploaded"
   else
-    bad "gh is not installed, so the zip was not uploaded"
-    echo "      brew install gh, then: gh release create v$VERSION $DIST/$ZIPNAME"
-    echo "      The manifest below points at that URL, so boards will 404 until it exists."
+    head_ "gh is not installed, so upload the zip by hand"
+    cat <<MANUAL
+
+  The signed manifest is ready on disk but NOT pushed, because pushing it is
+  what tells the boards to go and get a file that does not exist yet.
+
+  1. Open:  https://github.com/$REPO/releases/new
+  2. Tag:   v$VERSION        (create it on this page)
+  3. Attach this file:
+       $DIST/$ZIPNAME
+  4. Publish the release, then run this command again. It will find the asset
+     and push the manifest.
+
+  Or install gh and skip all of that next time:
+       brew install gh && gh auth login
+
+MANUAL
+    exit 1
   fi
+fi
+
+# Confirm the thing the manifest points at is actually there. Catches a failed
+# upload, a wrong tag, and a private repo that boards could never read.
+ASSET_URL="$(python3 -c "import json;print(json.load(open('$MANIFEST'))['channels']['$CHANNEL']['url'])")"
+if curl -fsIL --max-time 30 "$ASSET_URL" >/dev/null 2>&1; then
+  ok "the release asset is reachable without credentials"
+else
+  bad "cannot reach $ASSET_URL"
+  cat <<'NOTE' >&2
+
+  The manifest was NOT pushed, so no board has been told to look for this.
+  Either the upload has not finished, the tag name does not match, or the repo
+  is private -- boards carry no credentials, so a private repo cannot work.
+  Fix it and run this again; nothing is lost.
+
+NOTE
+  exit 1
 fi
 
 git add "$MANIFEST" updates/manifest.sig "$PUBKEY" 2>/dev/null || true
 git commit -qm "release: $CHANNEL -> v$VERSION" || echo "  (nothing to commit)"
 git push -q
-ok "manifest pushed"
+ok "manifest pushed -- boards on $CHANNEL will pick this up"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
 MANIFEST_URL="https://raw.githubusercontent.com/$REPO/$BRANCH/updates/manifest.json"

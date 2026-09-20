@@ -832,6 +832,7 @@ def main():
     test_privilege_drop_readability()
     test_audio_conflict()
     test_apt_resilience()
+    test_release_channel_can_be_preseeded_onto_a_card()
     test_release_signature_round_trip()
     test_selfupdate_refuses_before_it_reaches_the_network()
     test_version_ordering_for_updates()
@@ -1560,6 +1561,54 @@ def test_apt_resilience():
           "key-joeisanerd" not in src)
     check("the sources entry is not written when the key step failed",
           "could not add the Comitup repository" in src)
+
+
+def test_release_channel_can_be_preseeded_onto_a_card():
+    """A gift card must arrive already able to receive a release.
+
+    The alternative is talking somebody through pasting a URL into a settings
+    page, on a board you gave them specifically so they would never have to
+    open one. And it has to reach install.sh as a flag rather than through
+    state/, because the installer decides whether to arm the nightly timer
+    during the run -- a board that learned its channel afterwards would sit
+    there configured and never actually check.
+    """
+    print("release channel preseed")
+
+    prep = open(os.path.join(root_dir(), "boot", "prepare-sd-card.sh")).read()
+    check("card prep accepts --manifest-url", "--manifest-url" in prep)
+    check("card prep accepts --channel", "--channel)" in prep)
+    check("it writes the marker onto the boot partition",
+          "scoreboard-manifest-url.txt" in prep)
+    check("a non-https manifest URL is refused at card-prep time",
+          "must be an https URL" in prep)
+    check("an invented channel name is refused",
+          "takes stable or beta" in prep)
+
+    boot = open(os.path.join(root_dir(), "boot",
+                             "scoreboard-firstboot.sh")).read()
+    check("stage A carries it off the card",
+          "scoreboard-manifest-url.txt" in boot and 'manifest-url.txt"' in boot)
+    check("stage B turns it into installer flags",
+          "--manifest-url $(head -1" in boot)
+    check("and those flags actually reach install.sh",
+          "./install.sh $* $EXTRA_ARGS" in boot)
+    check("the variable is always defined, so set -u cannot bite",
+          'EXTRA_ARGS=""' in boot
+          and boot.index('EXTRA_ARGS=""') < boot.index("./install.sh $* $EXTRA_ARGS"))
+
+    installer = open(os.path.join(root_dir(), "install.sh")).read()
+    check("the installer takes --manifest-url", "--manifest-url) MANIFEST_URL_ARG" in installer)
+    check("the installer takes --channel", "--channel)      UPDATE_CHANNEL_ARG" in installer)
+    check("it refuses a non-https manifest URL too",
+          "the manifest URL must be https" in installer)
+    check("it refuses a channel that is not stable or beta",
+          "channel must be stable or beta" in installer)
+    check("the settings are written before the timer decision is made",
+          installer.index("MANIFEST_URL_ARG:-}\" \"${UPDATE_CHANNEL_ARG")
+          < installer.index("enable nightly update check"))
+    check("a config.json that predates this release still arms the timer",
+          "except Exception:\n    data = {}" in installer)
 
 
 def test_release_signature_round_trip():

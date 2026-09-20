@@ -4,6 +4,8 @@
 #   ./install.sh                      interactive, from this directory
 #   ./install.sh --yes                no prompts, sensible defaults
 #   ./install.sh --yes --no-comitup   skip the wifi captive portal
+#   ./install.sh --yes --manifest-url https://.../manifest.json --channel beta
+#                                     arm nightly self-update in one pass
 #   ./install.sh --repo <git-url>     clone first, then install
 #   ./install.sh --zip ~/board.zip    unpack a zip first, then install
 #
@@ -25,6 +27,8 @@ while [[ $# -gt 0 ]]; do
     --comitup)     WITH_COMITUP=1 ;;
     --no-comitup)  WITH_COMITUP=0 ;;
     --no-start)    DO_START=0 ;;
+    --manifest-url) MANIFEST_URL_ARG="${2:-}"; shift ;;
+    --channel)      UPDATE_CHANNEL_ARG="${2:-}"; shift ;;
     --repo)        REPO="${2:-}"; shift ;;
     --zip)         ZIP="${2:-}"; shift ;;
     --dir)         TARGET="${2:-}"; shift ;;
@@ -424,6 +428,42 @@ UNIT
 ok "scoreboard.service written"
 echo "      panel settings come from config.json, no flags needed"
 
+# Self-update settings, when passed. Written before the arming check below
+# reads config.json, so a board can be configured and armed in one install run
+# rather than needing a trip through the web UI in between.
+if [[ -n "${MANIFEST_URL_ARG:-}" || -n "${UPDATE_CHANNEL_ARG:-}" ]]; then
+  if python3 - "$HERE/config.json" "${MANIFEST_URL_ARG:-}" "${UPDATE_CHANNEL_ARG:-}" <<'PY'
+import json, os, sys
+path, url, channel = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+except Exception:
+    data = {}
+updates = data.setdefault("updates", {})
+updates.setdefault("enabled", True)
+if url:
+    if not url.startswith("https://"):
+        raise SystemExit("the manifest URL must be https")
+    updates["manifest_url"] = url
+if channel:
+    if channel not in ("stable", "beta"):
+        raise SystemExit("channel must be stable or beta")
+    updates["channel"] = channel
+updates.setdefault("channel", "stable")
+tmp = path + ".tmp"
+with open(tmp, "w") as fh:
+    json.dump(data, fh, indent=2, sort_keys=True)
+os.replace(tmp, path)
+PY
+  then
+    ok "self-update configured: ${UPDATE_CHANNEL_ARG:-stable} channel"
+  else
+    warn "could not write the self-update settings"
+    FAILED+=("self-update settings")
+  fi
+fi
+
 # The update key goes in /etc, not in the project, and is written once. That
 # placement is the whole security model: an update replaces everything under
 # $HERE, so a public key stored there could be replaced by the same release it
@@ -462,7 +502,13 @@ step "enable rename watcher" sudo systemctl enable --now scoreboard-hostname.pat
 # release with and somewhere to look for one; otherwise the timer would wake up
 # every night to do nothing.
 if [[ -f /etc/scoreboard/update-key.pem ]] \
-   && python3 -c "import json;raise SystemExit(0 if (json.load(open('config.json')).get('updates') or {}).get('manifest_url') else 1)" 2>/dev/null; then
+   && python3 -c "
+import json, sys
+try:
+    data = json.load(open('config.json'))
+except Exception:
+    data = {}
+sys.exit(0 if (data.get('updates') or {}).get('manifest_url') else 1)" 2>/dev/null; then
   for unit in scoreboard-update.service scoreboard-update.timer; do
     [[ -f "systemd/$unit" ]] || continue
     sed "s|/home/pi/scoreboard|$HERE|g" "systemd/$unit" \
