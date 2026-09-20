@@ -1,1 +1,13 @@
-{"schema":1,"channels":{}}
+{
+  "channels": {
+    "beta": {
+      "notes": "v2.29.1",
+      "published": "2026-09-20T19:01:02Z",
+      "sha256": "1791268bac044a04216873f6cf2629fd45814dddb9e30817878a570514de0204",
+      "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.29.1/led-scoreboard-v2.29.1.zip",
+      "version": "2.29.1"
+    }
+  },
+  "published": "2026-09-20T19:01:02Z",
+  "schema": 1
+}
