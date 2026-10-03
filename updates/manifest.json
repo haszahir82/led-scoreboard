@@ -8,14 +8,14 @@
       "version": "2.33.1"
     },
     "stable": {
-      "notes": "v2.30.2",
-      "promoted": "2026-09-20T19:33:03Z",
-      "published": "2026-09-20T19:31:56Z",
-      "sha256": "0b8a2f11aa5513f4193f15235c5c1c8f268a56cd53a142454b80880596a99ab4",
-      "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.30.2/led-scoreboard-v2.30.2.zip",
-      "version": "2.30.2"
+      "notes": "v2.33.1",
+      "promoted": "2026-10-03T02:24:40Z",
+      "published": "2026-10-03T02:23:55Z",
+      "sha256": "e27b7746eeb55f7ab6839828013108284bf83f66c7fc4b7b04fd565d43f6ddf1",
+      "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.33.1/led-scoreboard-v2.33.1.zip",
+      "version": "2.33.1"
     }
   },
-  "published": "2026-10-03T02:23:55Z",
+  "published": "2026-10-03T02:24:40Z",
   "schema": 1
 }
