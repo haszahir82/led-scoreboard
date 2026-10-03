@@ -199,6 +199,12 @@ DEFAULTS = {
     # open the onboarding wizard instead of the settings page.
     "setup": {
         "complete": False,
+        # Minutes the board shows its own address after landing on a network
+        # it has not announced on before. Only applies once setup is finished:
+        # a board that has never been through the wizard shows the address
+        # continuously, because at that point the address IS the instruction.
+        # 0 turns the post-setup announcement off entirely.
+        "announce_minutes": 5,
     },
 
     "web": {

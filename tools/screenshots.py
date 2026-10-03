@@ -65,6 +65,14 @@ class FakeStore:
 
 def build_context():
     config = Config(path=os.path.join(OUT_DIR, "_screenshot_config.json"))
+    # A configured board, which is what every screenshot and nearly every
+    # test is about. Left at the default of False, the playlist would quite
+    # correctly show nothing but the setup address -- that is the whole point
+    # of the address screen -- and no rotation test would ever see a game.
+    config.set("setup.complete", True)
+    # ...and one that settled onto its network long ago, so the address
+    # announcement is not due either.
+    config.set("setup.announce_minutes", 0)
     config.set("leagues.ncaaf.favorites", ["OSU"])
     config.set("leagues.nfl.favorites", ["CIN"])
 

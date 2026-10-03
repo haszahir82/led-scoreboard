@@ -471,6 +471,46 @@ PY
   fi
 fi
 
+# A release knows which repository it was published from, so a board installed
+# from it does not need to be told. Only ever used to fill a blank: an URL
+# already in config.json is left exactly as it is, so this can set a board up
+# but never quietly move one.
+if [[ -z "${MANIFEST_URL_ARG:-}" && -f updates/origin.json ]]; then
+  ADOPTED="$(python3 - "$HERE/config.json" <<'PY' 2>/dev/null || true
+import json, os, sys
+cfg_path = sys.argv[1]
+try:
+    with open(cfg_path) as fh:
+        data = json.load(fh)
+except Exception:
+    data = {}
+if (data.get("updates") or {}).get("manifest_url"):
+    raise SystemExit            # already configured; say nothing, change nothing
+try:
+    with open("updates/origin.json") as fh:
+        origin = json.load(fh)
+except Exception:
+    raise SystemExit
+url = str(origin.get("manifest_url") or "")
+if not url.startswith("https://"):
+    raise SystemExit
+updates = data.setdefault("updates", {})
+updates.setdefault("enabled", True)
+updates.setdefault("channel", "stable")
+updates["manifest_url"] = url
+tmp = cfg_path + ".tmp"
+with open(tmp, "w") as fh:
+    json.dump(data, fh, indent=2, sort_keys=True)
+os.replace(tmp, cfg_path)
+print(url)
+PY
+)"
+  if [[ -n "$ADOPTED" ]]; then
+    ok "release channel taken from the release itself"
+    echo "      $ADOPTED"
+  fi
+fi
+
 # The update key goes in /etc, not in the project, and is written once. That
 # placement is the whole security model: an update replaces everything under
 # $HERE, so a public key stored there could be replaced by the same release it
@@ -526,7 +566,16 @@ sys.exit(0 if (data.get('updates') or {}).get('manifest_url') else 1)" 2>/dev/nu
   NEXT="$(systemctl list-timers scoreboard-update.timer --no-pager 2>/dev/null | sed -n 2p | awk '{print $1, $2, $3}')"
   [[ -n "$NEXT" ]] && echo "      next check: $NEXT"
 else
-  ok "self-update not armed (set updates.manifest_url in the web UI to arm it)"
+  if [[ ! -f /etc/scoreboard/update-key.pem ]]; then
+    ok "self-update not armed: this release carries no signing key"
+    echo "      Build a release from your own repo after ./tools/release.sh"
+    echo "      --init-key, and install that one. Releases handed to you"
+    echo "      directly cannot arm a board, by design."
+  else
+    ok "self-update not armed: no release channel set"
+    echo "      Normally the release supplies this. Set it under Updates in"
+    echo "      the web page, or re-run with --manifest-url <url>."
+  fi
 fi
 
 # --------------------------------------------------------------- 9. comitup

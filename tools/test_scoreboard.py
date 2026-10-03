@@ -916,6 +916,12 @@ def main():
     test_privilege_drop_readability()
     test_audio_conflict()
     test_apt_resilience()
+    test_settings_rows_cannot_collapse_their_labels()
+    test_board_announces_its_address_on_a_new_network()
+    test_address_fits_the_panel_at_every_plausible_ip()
+    test_a_release_carries_its_own_update_channel()
+    test_a_dark_mark_is_brightened_before_it_is_abandoned()
+    test_logo_audit_reports_rather_than_guesses()
     test_unreadable_override_falls_through_instead_of_giving_up()
     test_hand_picked_override_is_trusted()
     test_release_channel_can_be_preseeded_onto_a_card()
@@ -1647,6 +1653,362 @@ def test_apt_resilience():
           "key-joeisanerd" not in src)
     check("the sources entry is not written when the key step failed",
           "could not add the Comitup repository" in src)
+
+
+def test_settings_rows_cannot_collapse_their_labels():
+    """A hint cannot be allowed to wrap one word per line.
+
+    `.row` is a flexbox and `.row label` carried `min-width: 0`, so the label
+    would shrink to whatever the control beside it left over -- and a text
+    input at `width: 100%` leaves nothing. A long hint then wrapped into a
+    tall single-word column that ran off the bottom of the page, which is
+    exactly what the Release manifest row did once its hint grew to two
+    hundred characters.
+
+    Two defences, because either alone would have let it happen: a floor on
+    the label width so no hint can collapse it, and a cap on hint length so
+    nobody writes a paragraph into a slot meant for a phrase.
+    """
+    print("settings rows cannot collapse")
+    import re
+
+    ui = open(os.path.join(root_dir(), "web", "templates", "index.html")).read()
+
+    check("labels have a width floor",
+          re.search(r"\.row label \{[^}]*min-width:\s*4\d%", ui) is not None,
+          "min-width:0 is what let a text input squeeze the label to nothing")
+    check("free-text rows stack instead of sharing a line",
+          ".row.stack { flex-direction: column" in ui)
+    check("the manifest URL row is one of them",
+          'class="row stack"' in ui
+          and ui.index('class="row stack"') < ui.index('data-path="updates.manifest_url"'))
+
+    hints = re.findall(r'<span class="hint"[^>]*>(.*?)</span>', ui, re.S)
+    check("there are hints to check", len(hints) > 20, str(len(hints)))
+    overlong = [re.sub(r"\s+", " ", h) for h in hints if len(h) > 140]
+    check("no hint is long enough to wreck a row",
+          not overlong,
+          "; ".join(h[:70] for h in overlong))
+
+
+def test_board_announces_its_address_on_a_new_network():
+    """A board nobody can reach is a board whose scores do not matter yet.
+
+    The .local name is the friendly answer and the one that fails: plenty of
+    phones and home routers do not resolve mDNS, and when they do not, a name
+    on the panel is worse than nothing -- the person types it, gets an error,
+    and concludes the board is broken rather than that their router is
+    unhelpful. The IP always works and the board is the only thing that knows
+    it.
+
+    Two reasons to show it, behaving differently on purpose: before setup it
+    stays up, because there is nothing else to draw and no evidence anyone has
+    looked; after setup it is a few minutes on an unfamiliar network and then
+    back to being a scoreboard.
+    """
+    print("address announced on a new network")
+    import tempfile
+    import time
+    from data import netid
+    from renderer.playlist import Playlist
+
+    ctx, _ = build_context()
+    tmp = tempfile.mkdtemp()
+    real_path, real_dir = netid.SEEN_PATH, netid.STATE_DIR
+    real_ip, real_ssid = netid.ip_address, netid.wifi_ssid
+    try:
+        netid.SEEN_PATH = os.path.join(tmp, "seen.json")
+        netid.STATE_DIR = tmp
+        netid.ip_address = lambda: "192.168.1.45"
+        netid.wifi_ssid = lambda: "BrothersWifi"
+
+        def showing(pl):
+            pl.maybe_rebuild(force=True)
+            return type(pl.screens[0]).__name__
+
+        ctx.config.set("setup.complete", False)
+        ctx.config.set("setup.announce_minutes", 5)
+        check("a board that has never been set up shows its address",
+              showing(Playlist(ctx)) == "AddressScreen")
+
+        # The first run after upgrading: already set up, already working, no
+        # record of anything. That board has not moved and must not suddenly
+        # put an IP on the wall -- it quietly notes where it is instead.
+        ctx.config.set("setup.complete", True)
+        check("upgrading a working board does not make it announce",
+              showing(Playlist(ctx)) != "AddressScreen")
+        check("it records where it already is instead",
+              netid.already_announced("wifi:BrothersWifi"))
+
+        # Now it moves, which is the case the feature is actually for.
+        netid.wifi_ssid = lambda: "SomewhereElse"
+        pl = Playlist(ctx)
+        check("a set-up board that has moved announces its address",
+              showing(pl) == "AddressScreen")
+
+        # The window has to actually close, or a living room gets an IP
+        # address on the wall forever.
+        pl._announce_started = time.time() - 6 * 60
+        check("and it stops once the window is over",
+              showing(pl) != "AddressScreen")
+        check("the network is remembered so it does not come back",
+              netid.already_announced())
+        check("including after a restart",
+              showing(Playlist(ctx)) != "AddressScreen")
+
+        netid.wifi_ssid = lambda: "DifferentHouseAgain"
+        check("moving it again announces again",
+              showing(Playlist(ctx)) == "AddressScreen")
+
+        ctx.config.set("setup.announce_minutes", 0)
+        check("and zero minutes turns the post-setup announcement off",
+              showing(Playlist(ctx)) != "AddressScreen")
+    finally:
+        netid.SEEN_PATH, netid.STATE_DIR = real_path, real_dir
+        netid.ip_address, netid.wifi_ssid = real_ip, real_ssid
+        ctx.config.set("setup.complete", True)
+        ctx.config.set("setup.announce_minutes", 5)
+
+
+def test_address_fits_the_panel_at_every_plausible_ip():
+    """192.168.1.45:8080 fits on one line. 192.168.100.100:8080 does not.
+
+    Both are perfectly ordinary home addresses, and a layout that only handled
+    the first would look right on the bench and arrive clipped in somebody
+    else's house -- where the whole point of the screen is that it is the only
+    way in.
+    """
+    print("address fits the panel")
+    from renderer.layout import FONTS
+    from renderer.screens.info import AddressScreen
+    from tools.screenshots import render
+
+    ctx, _ = build_context()
+
+    def width(text, font):
+        try:
+            return font.getbbox(text)[2]
+        except Exception:
+            return font.getsize(text)[0]
+
+    check("the short form really does fit on one line",
+          width("192.168.1.45:8080", FONTS.small) <= 62)
+    check("the long form really does not",
+          width("192.168.100.100:8080", FONTS.small) > 62,
+          "if this ever fits, the split branch stopped being exercised")
+    check("but the long IP fits once the port moves to its own line",
+          width("192.168.100.100", FONTS.small) <= 62)
+
+    # Render every shape rather than reasoning about them.
+    for ip in ("192.168.1.45", "192.168.100.100", "10.0.0.7",
+               "172.16.254.199", ""):
+        screen = AddressScreen(ctx, ip)
+        try:
+            img = render(screen, 0.5)
+        except Exception as exc:
+            check("renders {}".format(ip or "no network"), False, str(exc))
+            continue
+        check("renders {}".format(ip or "no network"),
+              img.size == (64, 32))
+        # Something has to actually be on the panel.
+        check("draws something for {}".format(ip or "no network"),
+              img.convert("L").getextrema()[1] > 60)
+
+    # A board with no address at all must say so rather than show ":8080".
+    blank = render(AddressScreen(ctx, ""), 0.5)
+    check("a board with no network says so instead of showing a bare port",
+          blank.convert("L").getextrema()[1] > 60)
+
+    reset = open(os.path.join(root_dir(), "prepare-for-gift.sh")).read()
+    check("the handoff reset forgets which networks were announced",
+          "announced-networks.json" in reset,
+          "announcing on your wifi must not count as telling the recipient")
+
+
+def test_a_release_carries_its_own_update_channel():
+    """A board installed from a release should not need to be told where to look.
+
+    Before this, the manifest URL was a string the owner carried from their
+    terminal to every board by hand, and a field somebody forgot was a board
+    that silently never updated. That failure has no symptom: a board that is
+    not checking looks exactly like a board that is, right up until the day you
+    need to push a fix to a house you cannot get into.
+
+    The ordering below is the part that was wrong first time and is worth
+    pinning. `git archive` ships HEAD, so the stamp has to be written AND
+    committed before the archive is built -- written afterwards, it misses the
+    release it belongs to and turns up only in the next one.
+    """
+    print("a release carries its own update channel")
+
+    rel = open(os.path.join(root_dir(), "tools", "release.sh")).read()
+    check("the release stamps the repo's manifest URL",
+          "updates/origin.json" in rel)
+    check("it is committed before the archive is built",
+          rel.index("git commit -qm \"release: stamp origin")
+          < rel.index("git archive --format=zip"),
+          "git archive ships HEAD; a later write misses this release")
+    check("the stamped URL is derived, not typed",
+          "raw.githubusercontent.com/{}/{}/updates/manifest.json" in rel)
+
+    installer = open(os.path.join(root_dir(), "install.sh")).read()
+    check("the installer reads it", "updates/origin.json" in installer)
+    check("an explicit --manifest-url still wins",
+          'if [[ -z "${MANIFEST_URL_ARG:-}" && -f updates/origin.json ]]' in installer)
+    check("a board that is already configured is left alone",
+          "already configured; say nothing, change nothing" in installer)
+    check("and only an https URL is adopted",
+          'if not url.startswith("https://")' in installer)
+
+    # The security argument, written down where it will be re-read rather than
+    # re-derived: a release naming its own update URL is safe because the key
+    # that validates releases lives in /etc and is never replaced.
+    check("the reasoning for why this is safe is recorded",
+          "trust boundary" in rel)
+
+    # The message that sent the owner looking in the first place.
+    ui = open(os.path.join(root_dir(), "web", "templates", "index.html")).read()
+    check("the settings page no longer just says blank means nothing",
+          "Blank means no automatic updates at all" not in ui)
+    check("it says where the value normally comes from",
+          "filled in by the release you installed" in ui)
+
+    check("an unarmed board is told which of the two reasons applies",
+          "this release carries no signing key" in installer
+          and "no release channel set" in installer)
+
+
+def test_a_dark_mark_is_brightened_before_it_is_abandoned():
+    """A logo that is the right shape and merely too dark is worth rescuing.
+
+    Distinct from the Carolina case next door, which is about trying a
+    different source. This is about trying the same source louder, and it only
+    ever runs on a mark that has already failed -- so the comparison is not
+    "boosted or natural", it is "boosted or four letters".
+
+    The measure it is judged on is deliberately not luminance, and that turned
+    out to matter more than expected. Luminance weights blue at 11%, so Kansas
+    State's purple at FULL brightness scores 109 against a solid threshold of
+    110: a pixel driving its blue LED as hard as the panel physically can,
+    counted as not really there. Every purple and deep-blue team is marked down
+    the same way. Luminance models ink on paper; a panel emits its own light.
+    """
+    print("dark marks are brightened before being abandoned")
+    from PIL import Image, ImageDraw
+    from data import logos
+
+    def silhouette(colour):
+        """A solid shape over roughly a third of the panel."""
+        img = Image.new("RGB", (20, 20), (0, 0, 0))
+        ImageDraw.Draw(img).polygon(
+            [(2, 14), (7, 4), (11, 9), (17, 5), (18, 15), (9, 17)], fill=colour)
+        return img
+
+    def rescued(img):
+        lifted = logos.rescue(img)
+        return (lifted is not None and logos.legible(lifted)
+                and logos.presence(lifted) >= logos.RESCUE_MIN_SOLID)
+
+    # The finding that drove the measure, pinned so it cannot quietly regress.
+    purple = Image.new("RGB", (1, 1), (140, 69, 235))
+    check("purple at full brightness is under the luminance threshold",
+          purple.convert("L").getpixel((0, 0)) < logos.SOLID_THRESHOLD,
+          "luma {}".format(purple.convert("L").getpixel((0, 0))))
+    check("but is unmistakably lit by distance from black",
+          purple.convert("HSV").getpixel((0, 0))[2] >= logos.PRESENCE_THRESHOLD,
+          "V {}".format(purple.convert("HSV").getpixel((0, 0))[2]))
+
+    check("a deep purple silhouette is rescued", rescued(silhouette((81, 40, 136))))
+    check("so is a deep navy one", rescued(silhouette((0, 40, 120))))
+    check("and a dark green one", rescued(silhouette((10, 60, 30))))
+
+    # The two things that must still fail, or the rescue is just a way of
+    # promoting noise.
+    carolina = logos._prepare(Image.open(
+        os.path.join(root_dir(), "logos", "CAR.png")), 20)
+    check("a mark whose body is pure black is not rescued", not rescued(carolina),
+          "zero times anything is still zero")
+
+    haze = Image.new("RGB", (20, 20), (0, 0, 0))
+    for i in range(30):
+        haze.putpixel((i % 20, i // 20), (22, 22, 26))
+    check("a faint scattering is not promoted into a smudge", not rescued(haze))
+
+    check("an entirely black image has nothing to lift",
+          logos.rescue(Image.new("RGB", (20, 20), (0, 0, 0))) is None)
+
+    # Scope: the variant choice must keep using luminance, because those
+    # decisions were checked against real marks on the real board.
+    src = open(os.path.join(root_dir(), "data", "logos.py")).read()
+    check("the variant choice still scores on readability",
+          "prefers_dark(standard, readability(alt))" in src)
+    check("and only the rescue uses presence",
+          src.count("presence(") <= 3, str(src.count("presence(")))
+
+    # Brightening happens after every real source has been tried, or a dim
+    # version of the wrong picture would beat a good version of the right one.
+    check("the rescue runs last, after the other sources",
+          src.index("for candidate in _fallback_sources") < src.index("lifted = rescue("))
+
+
+def test_logo_audit_reports_rather_than_guesses():
+    """Finding these one at a time is the slow way.
+
+    The tool exists because "I noticed a few more" is not a list, and because
+    the useful answer is which number is small, not that something is wrong.
+    """
+    print("logo audit tool")
+    from tools import logo_audit
+
+    for name in ("audit", "team_artwork", "playing_today", "main"):
+        check("logo_audit exposes {}()".format(name),
+              callable(getattr(logo_audit, name, None)))
+
+    doc = logo_audit.__doc__ or ""
+    check("it says to run it on the Pi", "on the Pi" in doc)
+    check("it explains what each failure shape means",
+          "no artwork" in doc and "thin outline" in doc)
+
+    src = open(os.path.join(root_dir(), "tools", "logo_audit.py")).read()
+    check("it uses the teams endpoint, not the day's scoreboard",
+          "teams?limit=1000" in src,
+          "a Tuesday run would otherwise look complete with a handful of teams")
+
+    # `python3 -m tools.logo_audit` only resolves from the project root, and
+    # the natural place to type it is wherever ssh drops you. The ./scoreboard
+    # wrapper already cds to its own directory, so every tool meant to be run
+    # by hand gets a subcommand there rather than an incantation with a
+    # precondition nobody remembers.
+    cli = open(os.path.join(root_dir(), "scoreboard")).read()
+    check("the audit has a ./scoreboard subcommand",
+          "logos)" in cli and "tools.logo_audit" in cli)
+    check("so does the tuner", "tune)" in cli and "tools.logo_tune" in cli)
+    for name in ("logos", "tune"):
+        check("./scoreboard {} is in the usage header".format(name),
+              "./scoreboard {}".format(name) in cli)
+    check("it reports all three measures",
+          "visibility(" in src and "readability(" in src and "presence(" in src)
+    check("an unreachable ESPN is reported, not raised",
+          "could not reach ESPN" in src)
+
+    # A college run checks ~760 teams and most of the failures are NAIA
+    # programmes ESPN has no logo for. Listed together with the real findings,
+    # three actionable lines vanish into ninety of noise -- which is what the
+    # first run of this tool actually did.
+    check("teams with no artwork are counted, not listed",
+          "No artwork from ESPN  ({})" in src and "--verbose to list them" in src)
+    check("teams whose artwork fails are reported separately",
+          "Artwork that will not render" in src)
+    check("and it says what to do about those",
+          "./scoreboard tune {} --league {}" in src)
+
+    # Two teams sharing an abbreviation in one league is the MIA/Dolphins
+    # collision again, inside a league instead of across two, and it bites
+    # whenever override art gets filed.
+    check("shared abbreviations within a league are flagged",
+          "Shared abbreviations" in src)
+    check("with the reason they matter",
+          "filed by abbreviation" in src)
 
 
 def test_unreadable_override_falls_through_instead_of_giving_up():

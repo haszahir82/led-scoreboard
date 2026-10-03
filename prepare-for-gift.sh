@@ -60,6 +60,11 @@ rm -f /etc/wpa_supplicant/wpa_supplicant.conf 2>/dev/null
 say "Resetting the scoreboard to first-run"
 systemctl stop scoreboard 2>/dev/null
 
+# Forget which networks this board has already announced itself on. It has
+# announced itself here, on your wifi, and that must not count as having told
+# anybody anything in the house it is going to.
+rm -f "$HERE/state/announced-networks.json" 2>/dev/null || true
+
 if [[ -f "$HERE/config.json" ]]; then
   python3 - "$HERE/config.json" <<'PY'
 import json, sys

@@ -140,6 +140,45 @@ SETUP
   exit 1
 fi
 
+# ---------------------------------------------------------------- origin
+#
+# Stamp the repo with its own manifest URL, so a board installed from a release
+# built here configures itself. Without it the URL is a string that has to be
+# carried from this terminal to every board by hand, and a field somebody
+# forgets is a board that silently never updates -- which has no symptom at
+# all, because a board that is not checking looks exactly like one that is.
+#
+# Written and committed HERE, before the archive is built, and that ordering is
+# the whole point: `git archive` ships HEAD, so a file written after the build
+# would miss the release it belongs to and turn up only in the next one.
+#
+# A release naming its own update URL sounds like it should be a security
+# problem and is not. A board adopts it only when nothing is configured yet, so
+# a later release cannot repoint a board that already knows where to look; and
+# the signature is checked against the key in /etc, written once on first
+# install and never replaced, so a redirected board still could not install
+# anything from the new location. On a first install the key and the URL do
+# come from the same archive -- but that is already the trust boundary: you ran
+# that zip on purpose.
+BRANCH_NOW="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+python3 - "$REPO" "$BRANCH_NOW" <<'ORIGIN'
+import json, sys
+repo, branch = sys.argv[1], sys.argv[2]
+with open("updates/origin.json", "w") as fh:
+    json.dump({
+        "repo": repo,
+        "branch": branch,
+        "manifest_url":
+            "https://raw.githubusercontent.com/{}/{}/updates/manifest.json".format(repo, branch),
+    }, fh, indent=2, sort_keys=True)
+    fh.write("\n")
+ORIGIN
+if [[ -n "$(git status --porcelain updates/origin.json 2>/dev/null)" ]]; then
+  git add updates/origin.json
+  git commit -qm "release: stamp origin for $REPO" || true
+  ok "stamped this repo's manifest URL into the release"
+fi
+
 # ---------------------------------------------------------------- promote
 
 if [[ $PROMOTE -eq 1 ]]; then
@@ -367,7 +406,7 @@ NOTE
   exit 1
 fi
 
-git add "$MANIFEST" updates/manifest.sig "$PUBKEY" 2>/dev/null || true
+git add "$MANIFEST" updates/manifest.sig "$PUBKEY" updates/origin.json 2>/dev/null || true
 git commit -qm "release: $CHANNEL -> v$VERSION" || echo "  (nothing to commit)"
 git push -q
 ok "manifest pushed -- boards on $CHANNEL will pick this up"
@@ -379,7 +418,8 @@ cat <<INFO
 
   ${BOLD}$CHANNEL is now on v$VERSION${OFF}
 
-  Put this in each board's web page, under Updates -> Release manifest:
+  A board installed from this release configures itself -- the URL below is
+  baked in, so there is nothing to paste unless you are changing it:
 
       $MANIFEST_URL
 

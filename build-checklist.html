@@ -518,10 +518,10 @@ footer {
       <div class="cmd-label">On your Mac, card still inserted</div>
       <button class="copy" type="button">Copy</button>
 <pre>cd ~/Downloads
-unzip -o led-scoreboard-v2.30.zip 'scoreboard/boot/*'
+unzip -o led-scoreboard-v2.33.zip 'scoreboard/boot/*'
 chmod +x scoreboard/boot/prepare-sd-card.sh
 
-scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.30.zip \
+scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.33.zip \
   --name "Living Room Scoreboard" \
   --panels 1 \
   --wifi "YourNetwork" --wifi-pass "…" \
@@ -628,12 +628,12 @@ scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.30.zip \
       <div class="cmd">
         <div class="cmd-label">From your Mac</div>
         <button class="copy" type="button">Copy</button>
-<pre>scp ~/Downloads/led-scoreboard-v2.30.zip &lt;user&gt;@&lt;ip&gt;:~</pre>
+<pre>scp ~/Downloads/led-scoreboard-v2.33.zip &lt;user&gt;@&lt;ip&gt;:~</pre>
       </div>
       <div class="cmd">
         <div class="cmd-label">Over SSH, one command</div>
         <button class="copy" type="button">Copy</button>
-<pre>unzip -o led-scoreboard-v2.30.zip &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</pre>
+<pre>unzip -o led-scoreboard-v2.33.zip &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes</pre>
       </div>
       <p class="why">
         A failed step does not kill the run: everything that failed is listed at
@@ -796,7 +796,7 @@ sudo shutdown -h now</pre>
     <div class="cmd">
       <div class="cmd-label">From your Mac</div>
       <button class="copy" type="button">Copy</button>
-<pre>scp ~/Downloads/led-scoreboard-v2.30.zip &lt;user&gt;@&lt;board&gt;:~</pre>
+<pre>scp ~/Downloads/led-scoreboard-v2.33.zip &lt;user&gt;@&lt;board&gt;:~</pre>
     </div>
     <div class="cmd">
       <div class="cmd-label">Then, over SSH on the board</div>
@@ -834,55 +834,161 @@ sudo shutdown -h now</pre>
       nothing listens, and nothing is configured on anyone's router &mdash; it
       works behind carrier-grade NAT, where inbound would not.
     </p>
-    <ul class="tasks">
-      <li class="task"><input type="checkbox" id="t9a"><label for="t9a">Create the signing key<span class="sub">Once, on your Mac. The private half never leaves it</span></label></li>
-      <li class="task"><input type="checkbox" id="t9b"><label for="t9b"><b>Back the private key up somewhere you will still have it in two years</b><span class="sub">A password manager's secure note is fine. Lose it and no board can be updated again without physically getting to it</span></label></li>
-      <li class="task"><input type="checkbox" id="t9c"><label for="t9c">Commit the public key and publish a first release to <span class="inline">beta</span></label></li>
-      <li class="task"><input type="checkbox" id="t9d"><label for="t9d">Point each board at the manifest and set its channel<span class="sub">Yours on beta, the three gifts on stable. In the web UI under Updates</span></label></li>
-      <li class="task"><input type="checkbox" id="t9e"><label for="t9e">Re-run <span class="inline">./install.sh --yes</span> on each board<span class="sub">This is what copies the key into <span class="inline">/etc</span> and arms the nightly timer. A board installed from an earlier release has neither</span></label></li>
-      <li class="task"><input type="checkbox" id="t9f"><label for="t9f">Confirm with <span class="inline">./scoreboard doctor</span> and one forced check</label></li>
-    </ul>
+    <div class="note">
+      <b>Everything below has been run end to end, and the order is the order
+      it works in.</b> The first pass through hit a missing prerequisite at
+      almost every step, so each one is here with the thing that goes wrong
+      next to it rather than left to the troubleshooting table.
+    </div>
 
+    <h3 style="font-size:16px;margin:26px 0 4px 41px">A. Tools on your Mac</h3>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t9a"><label for="t9a">Install the GitHub CLI and sign in<span class="sub">Optional but worth it. Without it you upload each release zip through the website by hand</span></label></li>
+      <li class="task"><input type="checkbox" id="t9b"><label for="t9b">Create a Python environment for the release tests<span class="sub">Your Mac has no reason to have the board's runtime, and without this the release script cannot run the suite</span></label></li>
+    </ul>
     <div class="cmd">
-      <div class="cmd-label">Once, on your Mac</div>
+      <div class="cmd-label">GitHub CLI</div>
       <button class="copy" type="button">Copy</button>
-<pre>./tools/release.sh --init-key ~/.scoreboard/release-key.pem</pre>
+<pre>brew install gh
+gh auth login</pre>
+    </div>
+    <div class="note">
+      <b>If brew says <i>Cannot install under Rosetta 2 in ARM default prefix</i></b>,
+      your terminal is running emulated x86 while Homebrew is installed at the
+      Apple Silicon location. Use
+      <span class="inline">arch -arm64 brew install gh</span> for that one
+      command. <span class="inline">uname -m</span> tells you which you are in:
+      <span class="inline">arm64</span> is native,
+      <span class="inline">x86_64</span> is Rosetta. To fix it permanently,
+      quit Terminal, then Finder &rarr; Applications &rarr; Utilities &rarr;
+      right-click Terminal &rarr; Get Info &rarr; uncheck <b>Open using
+      Rosetta</b>.
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">Python environment for the tests</div>
+      <button class="copy" type="button">Copy</button>
+<pre>python3 -m venv ~/.scoreboard/venv
+~/.scoreboard/venv/bin/pip install -q requests Pillow Flask pytz tzlocal</pre>
+    </div>
+    <div class="note">
+      A virtual environment rather than a plain <span class="inline">pip
+      install</span> because recent macOS and Homebrew both refuse to let pip
+      write to the system Python. The release script finds it on its own. Skip
+      this and every publish needs
+      <span class="inline">--skip-tests</span>, which hands the checking to the
+      boards &mdash; they run the suite against the download before installing
+      it either way, so you lose a fast failure, not a safe one.
+    </div>
+
+    <h3 style="font-size:16px;margin:26px 0 4px 41px">B. The repository</h3>
+    <p class="why">
+      Releases are published from a clone of your own repo, because the repo is
+      where the boards look for the manifest.
+    </p>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t9c"><label for="t9c">Create the repo from the current release and push it</label></li>
+    </ul>
+    <div class="cmd">
+      <div class="cmd-label">On your Mac</div>
+      <button class="copy" type="button">Copy</button>
+<pre>mkdir -p ~/src && cd ~/src && unzip -o ~/Downloads/led-scoreboard-v2.33.zip
+cd scoreboard
+git init -b main
+git add -A
+git commit -m "scoreboard v2.30.2"
+gh repo create led-scoreboard --public --source=. --remote=origin --push</pre>
+    </div>
+    <div class="note">
+      <b>Public on purpose.</b> The boards then carry no credentials at all, so
+      a lost or resold board leaks nothing and there is no token to rotate or
+      expire. It also matches the licence: upstream is GPLv3, your fork carries
+      the same terms, and the source has to be available to anyone you hand a
+      board to regardless. Not legal advice, but a public repo settles it
+      without you doing anything else.
+    </div>
+    <div class="note">
+      <b>No gh?</b> Create the repository on github.com by hand &mdash; public,
+      no README, no .gitignore &mdash; then connect it:
+      <span class="inline">git remote add origin
+      https://github.com/YOU/led-scoreboard.git</span> followed by
+      <span class="inline">git push -u origin main</span>.
+    </div>
+
+    <h3 style="font-size:16px;margin:26px 0 4px 41px">C. The signing key</h3>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t9d"><label for="t9d">Create the key</label></li>
+      <li class="task"><input type="checkbox" id="t9e"><label for="t9e"><b>Back the private key up somewhere you will still have it in two years</b><span class="sub">A password manager's secure note is fine</span></label></li>
+      <li class="task"><input type="checkbox" id="t9f"><label for="t9f">Commit and push the public half<span class="sub">A release built without it cannot arm any board</span></label></li>
+    </ul>
+    <div class="cmd">
+      <div class="cmd-label">From inside ~/src/scoreboard</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./tools/release.sh --init-key ~/.scoreboard/release-key.pem
+git add updates/pubkey.pem
+git commit -m "release signing key"
+git push</pre>
     </div>
     <div class="note stop">
-      <b>That file is the only thing standing between a stranger and four Pis
+      <b>That private key is the only thing between a stranger and four Pis
       inside three houses.</b> Whoever holds it can make every board run
-      whatever they like, at four in the morning, with no one watching. Keep it
-      off the boards, out of the repo, and backed up. The public half ships in
-      the release and gets copied to
+      whatever they like, at four in the morning, with nobody watching. Keep it
+      off the boards, out of the repo, backed up. The public half ships in the
+      release and is copied to
       <span class="inline">/etc/scoreboard/update-key.pem</span> on first
-      install, where an update cannot reach it &mdash; which is the point:
-      a release can never replace the key that would have caught it.
+      install, where an update cannot reach it: a release can never replace the
+      key that would have caught it.
+    </div>
+    <div class="note">
+      <b>Forget the commit and the publish stops you.</b> The release script
+      refuses to build an archive with no
+      <span class="inline">updates/pubkey.pem</span> in it, because a board
+      installed from that archive could never verify anything and would not say
+      so until the day you needed it.
     </div>
 
+    <h3 style="font-size:16px;margin:26px 0 4px 41px">D. Publish, and point the boards at it</h3>
+    <ul class="tasks">
+      <li class="task"><input type="checkbox" id="t9g"><label for="t9g">Publish the first release to <span class="inline">beta</span><span class="sub">It prints the manifest URL at the end. Copy it</span></label></li>
+      <li class="task"><input type="checkbox" id="t9h"><label for="t9h">Install that release on your own board<span class="sub">From <b>v2.32</b> the release carries its own manifest URL, so there is nothing to paste. Pass --channel beta for your board; the gifts default to stable</span></label></li>
+      <li class="task"><input type="checkbox" id="t9i"><label for="t9i">Confirm the whole chain</label></li>
+    </ul>
     <div class="cmd">
-      <div class="cmd-label">Publishing a release</div>
+      <div class="cmd-label">Publish</div>
       <button class="copy" type="button">Copy</button>
 <pre>./tools/release.sh beta</pre>
     </div>
-    <p class="why">
-      Builds the zip, runs the tests, hashes it, points the beta channel at it,
-      signs the manifest, uploads the asset and pushes. Your board picks it up
-      that night, or immediately with
-      <span class="inline">./scoreboard selfupdate --force</span>.
-    </p>
-
+    <div class="note">
+      <b>Without gh it stops partway and tells you what to do</b>, printing the
+      release URL to open, the tag to create, and the path of the zip to
+      attach. Upload it there and run the same command again to finish. It
+      stops rather than carrying on because the manifest is the switch: the
+      moment it is pushed every board on that channel starts fetching the URL
+      it names, so the file has to exist first. The script confirms the asset
+      resolves without credentials before it pushes anything, which also
+      catches a wrong tag and a repo left private.
+    </div>
     <div class="cmd">
-      <div class="cmd-label">Once yours has run it for a day</div>
+      <div class="cmd-label">On each board, with your own manifest URL</div>
       <button class="copy" type="button">Copy</button>
-<pre>./tools/release.sh stable --promote</pre>
+<pre>scp ~/Downloads/led-scoreboard-v2.33.zip &lt;user&gt;@&lt;board&gt;:~</pre>
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">Then over SSH on that board</div>
+      <button class="copy" type="button">Copy</button>
+<pre>cd ~ &amp;&amp; unzip -o "$(ls -t led-scoreboard-*.zip | head -1)" &amp;&amp; cd scoreboard &amp;&amp; ./install.sh --yes --channel beta</pre>
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">Confirm</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./scoreboard doctor
+./scoreboard selfupdate --force</pre>
     </div>
     <div class="note">
-      <b>The two channels are the actual safety feature.</b> Signing stops an
-      attacker, which is unlikely; the promote step stops you, which is not.
-      Nothing reaches the three boards you cannot touch until a release has
-      spent a day running on the one you can.
+      <b>"Up to date on beta" is the success message</b>, not a non-event. It
+      means the board fetched your manifest, verified the signature against the
+      key in <span class="inline">/etc</span>, and agreed with the version it is
+      running. A missing key or a bad signature says so there instead.
     </div>
-
     <div class="table-wrap">
       <table>
         <thead><tr><th>Setting</th><th>Your board</th><th>The three gifts</th></tr></thead>
@@ -892,6 +998,73 @@ sudo shutdown -h now</pre>
           <tr><td>Keep up to date</td><td>On</td><td>On, and theirs to switch off</td></tr>
         </tbody>
       </table>
+    </div>
+
+    <h3 style="font-size:16px;margin:26px 0 4px 41px">E. Every release after the first</h3>
+    <p class="why">
+      This is the loop you will actually live in. Four commands, and the last
+      one is the only one the boards can see.
+    </p>
+    <div class="cmd">
+      <div class="cmd-label">Take a new build into the repo and publish it</div>
+      <button class="copy" type="button">Copy</button>
+<pre>cd ~/src &amp;&amp; unzip -o ~/Downloads/led-scoreboard-v&lt;version&gt;.zip
+cd ~/src/scoreboard &amp;&amp; git add -A &amp;&amp; git commit -m "scoreboard v&lt;version&gt;"
+git push
+./tools/release.sh beta</pre>
+    </div>
+    <div class="note">
+      <b>The first line runs from <span class="inline">~/src</span>, not from
+      inside the repo.</b> The archive's top folder is
+      <span class="inline">scoreboard</span>, so unzipping while inside the
+      checkout gives you
+      <span class="inline">~/src/scoreboard/scoreboard/</span> and updates
+      nothing. Your <span class="inline">updates/pubkey.pem</span> survives the
+      unzip either way: the released archives deliberately carry an empty
+      <span class="inline">updates/</span> so a build can never overwrite your
+      signing key with a dead one.
+    </div>
+    <div class="note">
+      <b>It refuses to build from a dirty tree.</b> A published release should
+      be a commit you can go back to, or "which code is on that board" has no
+      answer the first time something goes wrong in a house you cannot get
+      into. Commit first &mdash; the sequence above already does.
+    </div>
+    <div class="cmd">
+      <div class="cmd-label">Once your own board has run it for a day</div>
+      <button class="copy" type="button">Copy</button>
+<pre>./tools/release.sh stable --promote</pre>
+    </div>
+    <div class="note">
+      <b>The two channels are the real safety feature.</b> Signing stops an
+      attacker, which is unlikely. Promoting stops you, which is not. Nothing
+      reaches the three boards you cannot touch until a release has spent a day
+      on the one you can.
+    </div>
+
+    <h3 style="font-size:16px;margin:26px 0 4px 41px">F. Gift cards arrive already armed</h3>
+    <p class="why">
+      Preseed the channel onto the card and the board comes up able to receive
+      releases with nobody opening a settings page &mdash; which matters on a
+      board you gave someone precisely so they would never have to.
+    </p>
+    <div class="cmd">
+      <div class="cmd-label">Card prep, with the update settings added</div>
+      <button class="copy" type="button">Copy</button>
+<pre>scoreboard/boot/prepare-sd-card.sh ~/Downloads/led-scoreboard-v2.33.zip \
+  --name "Mike's Scoreboard" \
+  --panels 1 \
+  --manifest-url https://raw.githubusercontent.com/YOU/led-scoreboard/main/updates/manifest.json \
+  --channel stable \
+  --wifi "YourNetwork" --wifi-pass "…" \
+  --user yourname --user-pass "…"</pre>
+    </div>
+    <div class="note">
+      Build the gift cards from a release that contains your public key, or the
+      key never reaches <span class="inline">/etc</span> and the board can
+      never be updated remotely. The installer says
+      <i>no updates/pubkey.pem in this release, so self-update stays off</i>
+      when that has happened, which is the line to watch for.
     </div>
 
     <div class="note">
@@ -932,6 +1105,17 @@ sudo shutdown -h now</pre>
       <li>Its own wizard asks for a board name, a ZIP code, and their teams.</li>
       <li>It finishes by showing the address to bookmark, like <code>mikes-board.local:8080</code>.</li>
     </ol>
+    <p class="why" style="margin-top:14px">
+      <b>And if they get stuck before any of that</b>, the panel itself tells
+      them where to go. From <b>v2.33</b> a board that has not been through the
+      wizard shows its own IP address and <code>:8080</code> across the whole
+      screen &mdash; no scores, because it has no teams yet and nothing else
+      worth drawing. The IP rather than the <code>.local</code> name on
+      purpose: plenty of phones and home routers do not resolve mDNS, and a
+      name that does not work is worse than no name, because they conclude the
+      board is broken rather than that their router is unhelpful.
+    </p>
+    
     <p class="why" style="margin-top:18px">
       <b>Tell them it updates itself.</b> Once a night the board checks whether
       you have published a new version and installs it if so, which is why they
@@ -1083,6 +1267,50 @@ sudo shutdown -h now</pre>
             <td>Fixed in v2.21. The bundled helmets are hand-drawn at roughly 20&times;20 and stored as a 400&times;400 upscale, so every edge in them is a hard block boundary. The resize used LANCZOS, an interpolating filter meant for photographs, which averaged those blocks into one another: a five-colour helmet arrived as an orange blur. Pixel art is now sampled rather than filtered, decided by the source&rsquo;s colour count, because the averaging is still right for everything else &mdash; the Ravens mark sampled the same way comes apart into specks. The same release also trims the painted-on margin those files carry, which had been surviving the resize and leaving every helmet smaller than the marks beside it.</td>
           </tr>
           <tr>
+            <td>Several teams show abbreviations and you want the full list</td>
+            <td>Stop finding them one at a time. <b>v2.31</b> adds
+            <code>./scoreboard logos</code>, which runs every team in
+            your enabled leagues through the real pipeline and prints the ones
+            that fall back to text with the numbers that decided it. Add
+            <code>--today</code> for just today's slate,
+            <code>--league ncaaf</code> to narrow it. Read the columns rather
+            than the verdict: <i>lit</i> near zero means the mark is genuinely
+            absent on a black panel and only override art will help;
+            <i>lit</i> healthy with <i>solid</i> at zero means it is there but
+            dark or thin; <i>no artwork</i> means ESPN has nothing under that
+            abbreviation, which usually means it is not the abbreviation ESPN
+            uses. Run it on the Pi &mdash; it needs ESPN and has to see the
+            same override folder the board reads.
+            <br><br>A college run checks around 760 teams, and most failures
+            are NAIA, junior-college and Canadian programmes ESPN has no logo
+            for at all. Those are counted rather than listed, so the handful
+            you can actually fix is not buried in ninety lines of noise. It
+            also flags <b>shared abbreviations</b>: ncaaf has two OSUs &mdash;
+            Ohio State and Ohio State Newark &mdash; and override art is filed
+            by abbreviation, so a file at <code>logos/ncaaf/OSU.png</code>
+            would be drawn for both. Same collision the league-scoped folders
+            fixed between leagues, this time inside one.</td>
+          </tr>
+          <tr>
+            <td>A purple or deep blue team&rsquo;s logo reads as text</td>
+            <td>Fixed in <b>v2.31</b>, and the cause is a measurement bug worth
+            knowing about. A mark that fails is now brightened as far as it
+            will go before being abandoned &mdash; the comparison at that point
+            is not "boosted or natural", it is "boosted or four letters". The
+            rescue is judged on distance from black rather than on luminance,
+            because luminance weights blue at 11%: Kansas State&rsquo;s purple
+            at <i>full</i> brightness scores 109 against a solid threshold of
+            110, so a pixel driving its blue LED as hard as the panel
+            physically can was being counted as not really there. Every purple
+            and deep-blue team was marked down the same way. Luminance models
+            ink on paper; an LED panel emits its own light. Only the rescue
+            uses the new measure &mdash; the choice between ESPN&rsquo;s two
+            variants still scores on luminance, because those decisions were
+            checked against real marks on the real board. A mark whose body is
+            genuinely black, like Carolina&rsquo;s panther, is still not
+            rescued: brightening adds no pixels.</td>
+          </tr>
+          <tr>
             <td>An NFL team shows its abbreviation instead of its logo</td>
             <td>Fixed in <b>v2.30</b>, and the cause was structural rather than
             about any one team. Shipped override art is tried first and short
@@ -1119,12 +1347,86 @@ sudo shutdown -h now</pre>
             solid, a scarlet haze with no letter in it, where its redraw is 32%
             solid. True colour keeps a 10-point advantage, so a mark that
             already reads is never traded away for a marginal gain.
-            <code>python3 -m tools.logo_tune CIN --league ncaaf</code> now prints
+            <code>./scoreboard tune CIN --league ncaaf</code> now prints
             which version the board chose and why.</td>
           </tr>
           <tr>
             <td>One specific team's logo is a smudge at 20 px</td>
-            <td>Some marks do not survive the shrink no matter the processing. Two options. Force the abbreviation in team colour by adding it to <code>display.logo_text_teams</code> in the web UI, which always reads. Or build better art: <code>python3 -m tools.logo_tune OSU --league ncaaf</code> writes a contact sheet of every treatment at panel size and magnified, then <code>--pick N</code> saves your choice to <code>logos/ncaaf/OSU.png</code>, which from then on wins over anything ESPN serves. Drop your own PNG in that folder and it works the same way.</td>
+            <td>Some marks do not survive the shrink no matter the processing. Two options. Force the abbreviation in team colour by adding it to <code>display.logo_text_teams</code> in the web UI, which always reads. Or build better art: <code>./scoreboard tune OSU --league ncaaf</code> writes a contact sheet of every treatment at panel size and magnified, then <code>--pick N</code> saves your choice to <code>logos/ncaaf/OSU.png</code>, which from then on wins over anything ESPN serves. Drop your own PNG in that folder and it works the same way.</td>
+          </tr>
+          <tr>
+            <td><code>brew</code>: <i>Cannot install under Rosetta 2 in ARM default prefix</i></td>
+            <td>Your terminal is running under Rosetta, emulating x86, while
+            Homebrew is installed at <code>/opt/homebrew</code>, the Apple
+            Silicon location. Brew refuses to mix them. One command:
+            <code>arch -arm64 brew install gh</code>. Check which you are in
+            with <code>uname -m</code> &mdash; <code>arm64</code> is native,
+            <code>x86_64</code> is Rosetta. Fix it permanently by quitting
+            Terminal, then Finder &rarr; Applications &rarr; Utilities &rarr;
+            right-click Terminal &rarr; Get Info &rarr; uncheck <b>Open using
+            Rosetta</b>. Nothing else in the release flow cares which
+            architecture the shell is.</td>
+          </tr>
+          <tr>
+            <td>Publishing fails with <code>ModuleNotFoundError: No module named 'requests'</code></td>
+            <td>Not a broken release: your Mac does not have the board's
+            runtime, and the release script was reporting "could not run" and
+            "ran and failed" with the same message. From <b>v2.29.1</b> it
+            tells them apart and prints the fix. Set up the environment once
+            &mdash; <code>python3 -m venv ~/.scoreboard/venv</code> then
+            <code>~/.scoreboard/venv/bin/pip install -q requests Pillow Flask
+            pytz tzlocal</code> &mdash; and every future release uses it. Or
+            publish with <code>--skip-tests</code> and let the boards do the
+            checking; they run the suite against the download before installing
+            it regardless, so you lose the fast failure, not the safe one.</td>
+          </tr>
+          <tr>
+            <td>The installer reports <i>1 problem(s): self-tests</i> and nothing else</td>
+            <td>Fixed in <b>v2.30.1</b>: that step used to send both streams to
+            <code>/dev/null</code>, so a failure could only ever report the
+            word "self-tests" and you had to re-run the suite by hand to learn
+            anything &mdash; on a board you may have reached over ssh
+            specifically to avoid that. It now prints the failing check lines,
+            or the last of the output if the suite crashed rather than failed
+            an assertion, and names the log at
+            <code>/tmp/scoreboard-selftest.log</code>. On an older build, get
+            the same answer with <code>cd ~/scoreboard &amp;&amp; python3 -m
+            tools.test_scoreboard 2>&amp;1 | grep -E "FAIL|failure"</code>.</td>
+          </tr>
+          <tr>
+            <td>A self-test fails on the board but passes everywhere else</td>
+            <td>Suspect an assertion that depends on the hardware underneath
+            it. This happened once for real: <i>slowdown omitted when unset</i>
+            was true on a laptop, where no board profile matches and nothing
+            supplies a GPIO slowdown, and false on a Pi 3, whose profile
+            supplies 1 &mdash; correct behaviour, since making profiles reach
+            the matrix was the whole point of v2.28. The test encoded the old
+            contract and shipped green. From <b>v2.30.2</b> the suite prints
+            the detected board on its first line, and a standing check builds
+            the matrix options under <i>every</i> profile in the fleet rather
+            than only the one running the tests. If you add a check that reads
+            hardware, pin the profile with
+            <code>performance.profile</code> instead of inheriting it.</td>
+          </tr>
+          <tr>
+            <td><i>Release manifest</i> is blank after you set up the repo</td>
+            <td>Expected before <b>v2.32</b>, and the hint was no help &mdash;
+            it said what blank meant rather than how it stops being blank.
+            Creating the repo configures nothing on the Pi: the board only
+            learns the URL if something writes it into
+            <code>config.json</code>. From v2.32 it does not need telling.
+            <code>./tools/release.sh</code> stamps the repo's own manifest URL
+            into <code>updates/origin.json</code>, committed before the archive
+            is built so it ships inside the release, and
+            <code>install.sh</code> adopts it when nothing is configured yet.
+            A board that already has a URL is never moved, an explicit
+            <code>--manifest-url</code> still wins, and only https is accepted.
+            Safe despite sounding otherwise: a release can only fill a blank,
+            and signatures are checked against the key in <code>/etc</code>,
+            which is written once and never replaced &mdash; so a release that
+            redirected a board could still not install anything from the new
+            location. Boards already in the field just need one install from a
+            v2.32-or-later release built in your own repo.</td>
           </tr>
           <tr>
             <td>A board has stopped picking up releases</td>
@@ -1265,6 +1567,23 @@ sudo shutdown -h now</pre>
           <tr>
             <td>Game times off by hours</td>
             <td>Pi is on UTC. <code>sudo timedatectl set-timezone America/New_York</code>.</td>
+          </tr>
+          <tr>
+            <td>Someone cannot find the board&rsquo;s web page</td>
+            <td>Look at the panel. From <b>v2.33</b> a board that has never
+            completed setup displays its own address full-screen, and a board
+            that has already been set up does the same for five minutes
+            whenever it lands on a network it has not announced on before
+            &mdash; a new router, a move, a trip to someone else&rsquo;s house.
+            It shows the IP with the port rather than the <code>.local</code>
+            name because the IP always works. Long addresses split across two
+            lines: <code>192.168.1.45:8080</code> fits one line on a 64-wide
+            panel, <code>192.168.100.100:8080</code> does not, and both are
+            ordinary home addresses. Adjust or disable the post-setup window
+            with <code>setup.announce_minutes</code> (0 is off). Upgrading an
+            existing board does <i>not</i> trigger it: a board already running
+            on its own network quietly records where it is rather than
+            announcing a move it did not make.</td>
           </tr>
           <tr>
             <td>No access point at their house</td>

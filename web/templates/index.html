@@ -43,7 +43,18 @@
     gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line);
   }
   .row:last-child { border-bottom: 0; }
-  .row label { flex: 1; min-width: 0; }
+  /* min-width:0 let the label shrink to nothing when the control beside it
+     wanted room, and a text input at width:100% always wants room. A long
+     hint then wrapped one word per line into a tall narrow column running off
+     the bottom of the page. Floor the label at just under half the row so no
+     amount of hint text can collapse it again. */
+  .row label { flex: 1 1 auto; min-width: 46%; }
+
+  /* A free-text field never shares a line. A URL is long, a phone is narrow,
+     and side by side gives the label a sliver and the input a slot too small
+     to read what you typed. Stacked, both get the full width. */
+  .row.stack { flex-direction: column; align-items: stretch; gap: 6px; }
+  .row.stack label { min-width: 0; }
   .row .hint { display: block; color: var(--dim); font-size: 12px; margin-top: 2px; }
   input[type=text], input[type=number], select {
     background: #0b0f14; color: var(--text); border: 1px solid var(--line);
@@ -136,10 +147,10 @@
       <span class="switch"><input type="checkbox" data-path="rotation.favorites_only"><span></span></span>
     </div>
     <div class="row">
-      <label>Today's games only<span class="hint" id="slateHint">On Sunday, show the NFL and drop yesterday's college games. Works from the schedule, so bowl season and Thanksgiving behave correctly</span></label>
+      <label>Today's games only<span class="hint" id="slateHint">Sunday shows the NFL, not yesterday's college games</span></label>
       <span class="switch"><input type="checkbox" data-path="rotation.day_relevance"><span></span></span>
     </div>
-    <div class="row"><label>My teams on their off day<span class="hint">1 shows a favorite's last result every pass, 3 shows it every third pass. Their poll and stats card follow the same setting</span></label>
+    <div class="row"><label>My teams on their off day<span class="hint">3 means your team's last result comes round every third pass</span></label>
       <input type="number" min="1" max="10" step="1" data-path="rotation.offday_favorite_every"></div>
     <div class="row">
       <label>Stay on my live game<span class="hint">Stop rotating while a favorite plays</span></label>
@@ -168,7 +179,7 @@
       </div>
     </div>
     <div class="row">
-      <label>Keep this board up to date<span class="hint">Checks once a night over a normal internet connection, installs quietly, and undoes the change by itself if anything goes wrong. Turn it off and the board stays exactly as it is now</span></label>
+      <label>Keep this board up to date<span class="hint">Nightly check, installs quietly, undoes itself if anything breaks</span></label>
       <span class="switch"><input type="checkbox" data-path="updates.enabled"><span></span></span>
     </div>
     <div class="row"><label>Channel<span class="hint">Stable unless you are the one testing releases</span></label>
@@ -176,8 +187,8 @@
         <option value="stable">Stable</option>
         <option value="beta">Beta</option>
       </select></div>
-    <div class="row"><label>Release manifest<span class="hint">Where the board looks. Blank means no automatic updates at all</span></label>
-      <input type="text" data-path="updates.manifest_url" placeholder="https://..."></div>
+    <div class="row stack"><label>Release manifest<span class="hint">Normally filled in by the release you installed. Blank means this board will not update on its own</span></label>
+      <input type="text" data-path="updates.manifest_url" placeholder="https://raw.githubusercontent.com/you/led-scoreboard/main/updates/manifest.json"></div>
   </section>
 
   <section>
@@ -265,7 +276,7 @@
     <div class="row"><label>Parallel chains<span class="hint">Separate ribbons from separate GPIO banks. The Adafruit HAT and Bonnet have a single output, so leave this at&nbsp;1.</span></label>
       <input type="number" min="1" max="3" step="1" data-path="matrix.parallel"></div>
     <div class="row">
-      <label>Divider between panels<span class="hint">A drawn hairline on the seam. Off by default: the gap between two panels already separates them, and the line reads as a lit bar down the left panel&rsquo;s edge.</span></label>
+      <label>Divider between panels<span class="hint">A hairline on the seam. Off by default; the gap already separates them</span></label>
       <span class="switch"><input type="checkbox" data-path="display.cell_divider"><span></span></span>
     </div>
     <div class="row">

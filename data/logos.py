@@ -73,6 +73,41 @@ SOLID_THRESHOLD = 110
 # to spend a second HTTP request asking whether the redraw reads better still.
 CLEARLY_READABLE = 0.22
 
+# Last-resort brightening, for a mark that is the right shape and simply too
+# dark to see. Kansas State's Powercat is the shape of the problem: a solid
+# silhouette in a single deep purple, which is a real logo covering a real
+# fraction of the panel and still reads as nothing, because deep purple against
+# black is barely a colour change. The ordinary boost will not rescue it --
+# that one stops at TARGET_MAX, deliberately, so a mark that is merely dim does
+# not come out glowing next to its neighbours.
+#
+# This pass is different in kind: it only ever runs on a mark that has already
+# failed and is about to be replaced by four letters, so the comparison is not
+# "boosted or natural", it is "boosted or gone".
+RESCUE_TARGET = 235
+
+# ...but only when what comes back is a shape rather than a haze. Brightening
+# adds no pixels, so a mark that is 8% present is still 8% present afterwards,
+# just louder -- and lifting a faint anti-aliased halo into visibility turns a
+# sparse mark into a smudge, which is worse than the abbreviation, not better.
+# Carolina's panther fails here and should: its body is pure black, and zero
+# times anything is still zero.
+RESCUE_MIN_SOLID = 0.15
+
+# The rescue is judged on how far a pixel is from black, not on luminance, and
+# the difference is not academic. Luminance weights blue at 11%, so Kansas
+# State's purple at FULL brightness scores 109 against a solid threshold of
+# 110: a pixel driving its blue LED as hard as the panel can and still counted
+# as not really there. Every purple and deep-blue team is penalised the same
+# way -- K-State, TCU, Baltimore, Duke.
+#
+# Luminance is the right model for ink on paper and the wrong one for an
+# emissive panel, where the question is simply whether the LED is lit. Only
+# the rescue uses this, deliberately: the variant choice keeps measuring
+# luminance, because that comparison has been checked against real marks on
+# the real board and changing it would re-open decisions that came out right.
+PRESENCE_THRESHOLD = 110
+
 
 def _safe(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", name)
@@ -154,6 +189,39 @@ def readability(img: Image.Image) -> float:
 def legible(img: Image.Image) -> bool:
     """Would this actually read as something on an unlit panel?"""
     return visibility(img) >= MIN_BRIGHT_RATIO
+
+
+def presence(img: Image.Image) -> float:
+    """Fraction of the mark clearly lit, measured as distance from black.
+
+    HSV value rather than luminance, for the reason set out at
+    PRESENCE_THRESHOLD: on a panel that emits its own light, a saturated blue
+    at full drive is bright, whatever the luminance formula says about how the
+    eye weights it.
+    """
+    value = img.convert("HSV").split()[2]
+    lit = sum(value.histogram()[PRESENCE_THRESHOLD:])
+    return lit / float(img.width * img.height)
+
+
+def rescue(img):
+    """Lift a mark as far as it will go, for when the alternative is text.
+
+    Separate from _boost_dark on purpose. That one is a gentle correction
+    applied to everything, capped so a dim logo does not end up brighter than
+    the ones beside it. This is triggered only by failure, so it has no such
+    obligation: the mark is about to be thrown away, and something visible in
+    roughly the right colour beats four letters.
+
+    Returns None for an image with nothing in it at all, because scaling zero
+    gets you zero however hard you try.
+    """
+    hue, sat, val = img.convert("HSV").split()
+    _, high = val.getextrema()
+    if not high:
+        return None
+    lifted = val.point(lambda p: min(255, int(p * (RESCUE_TARGET / float(high)))))
+    return Image.merge("HSV", (hue, sat, lifted)).convert("RGB")
 
 
 def needs_second_look(standard: float) -> bool:
@@ -444,7 +512,7 @@ def get(abbr: str, url: str = "", size: int = 20, helmet: bool = False,
             # it and overriding them defeats the point of the tool.
             pass
         else:
-            img = _fallback_art(abbr, url, size, helmet, league)
+            img = _fallback_art(abbr, url, size, helmet, league, primary=img)
 
     if img is None:
         with _lock:
@@ -459,21 +527,39 @@ def get(abbr: str, url: str = "", size: int = 20, helmet: bool = False,
     return img
 
 
-def _fallback_art(abbr, url, size, helmet, league):
+def _fallback_art(abbr, url, size, helmet, league, primary=None):
     """The next thing to try when the preferred source will not read.
 
     Ordered by how much it is still the team's own mark. ESPN's artwork first,
     because that is the real logo and the variant measurement in get() may pick
-    a redraw that works. The bundled helmet last, because a helmet is a
-    different picture from a logo -- recognisably the right team, but not the
-    thing that was asked for, so it is a substitute rather than a preference.
+    a redraw that works. Then brightening, which keeps the real mark and only
+    changes how loudly it is drawn. The bundled helmet last, because a helmet
+    is a different picture from a logo -- recognisably the right team, but not
+    the thing that was asked for, so it is a substitute rather than a
+    preference.
 
     Returns None when nothing reads, and then the caller draws the
     abbreviation, which always does.
     """
+    unlit = [] if primary is None else [primary]
+
     for candidate in _fallback_sources(abbr, url, size, helmet, league):
-        if candidate is not None and legible(candidate):
+        if candidate is None:
+            continue
+        if legible(candidate):
             return candidate
+        unlit.append(candidate)
+
+    # Everything real has failed. Before giving up on pictures entirely, try
+    # turning the brightness up on what we already have: a mark that is the
+    # right shape and merely too dark is worth rescuing, and the only thing it
+    # is competing with now is the abbreviation.
+    for candidate in unlit:
+        lifted = rescue(candidate)
+        if lifted is None:
+            continue
+        if legible(lifted) and presence(lifted) >= RESCUE_MIN_SOLID:
+            return lifted
     return None
 
 

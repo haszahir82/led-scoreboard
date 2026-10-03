@@ -448,6 +448,70 @@ class TickerScreen(Screen):
             drawn += 1
 
 
+class AddressScreen(Screen):
+    """Where to reach this board, for the minute somebody needs to know.
+
+    The whole screen, not a line on a busy one. A board showing this has
+    either never been set up -- in which case it has no teams and no ZIP code
+    and there is nothing else worth drawing -- or it has just turned up on a
+    network nobody has used it on before, which is the one moment the address
+    is the most interesting thing it could say.
+
+    The IP leads because the IP always works. A .local name is friendlier and
+    is the thing that fails: plenty of phones and home routers do not resolve
+    mDNS, and when they do not, a name on the panel is worse than nothing,
+    because the person types it, gets an error, and concludes the board is
+    broken rather than that their router is unhelpful.
+    """
+
+    kind = "info"
+    key = "address"
+    is_info = True
+
+    def __init__(self, ctx, address, port=8080, heading="SETUP"):
+        super().__init__(ctx)
+        self.address = address or ""
+        self.port = port
+        self.heading = heading
+
+    def _fits(self, text, font):
+        try:
+            return font.getbbox(text)[2] <= self.width - 2
+        except Exception:
+            try:
+                return font.getsize(text)[0] <= self.width - 2
+            except Exception:
+                return len(text) * 4 <= self.width - 2
+
+    def draw(self, frame, elapsed):
+        frame.text_centered(1, self.heading, FONTS.tiny, layout.YELLOW)
+
+        if not self.address:
+            frame.text_centered(12, "NO NETWORK", FONTS.small, layout.DIM)
+            frame.text_centered(22, "CHECK WIFI", FONTS.tiny, layout.DIM)
+            return
+
+        full = "{}:{}".format(self.address, self.port)
+
+        # One line when it fits, two when it does not. 192.168.1.45:8080 is 57
+        # pixels in the small font and fits a 64-wide panel; 192.168.100.100:8080
+        # is 68 and does not. Both are perfectly ordinary home addresses, so a
+        # layout that only ever handled the first would look fine on the bench
+        # and be clipped in somebody's house.
+        if self._fits(full, FONTS.small):
+            frame.text_centered(12, full, FONTS.small, layout.WHITE)
+        elif self._fits(self.address, FONTS.small):
+            frame.text_centered(9, self.address, FONTS.small, layout.WHITE)
+            frame.text_centered(19, ":{}".format(self.port), FONTS.small,
+                                layout.WHITE)
+        else:
+            # Longest plausible IPv4 still fits the tiny font; this is the
+            # belt-and-braces branch for anything stranger.
+            frame.text_centered(10, self.address, FONTS.tiny, layout.WHITE)
+            frame.text_centered(19, ":{}".format(self.port), FONTS.tiny,
+                                layout.WHITE)
+
+
 class MessageScreen(Screen):
     """Offseason, startup, and 'cannot reach ESPN' states."""
 

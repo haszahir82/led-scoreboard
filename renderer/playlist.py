@@ -19,7 +19,7 @@ index is carried across rebuilds by screen key. Without that, a score update
 every 20 seconds would snap the panel back to the first game forever.
 """
 
-from data import hardware, leagues, slate
+from data import hardware, leagues, netid, slate
 from renderer.screens import fantasy as fantasy_screens
 from renderer.screens import game as game_screens
 from renderer.screens import info as info_screens
@@ -51,6 +51,13 @@ class Playlist:
         # the instance so the info screens can honour the same decision as the
         # game list without computing it twice.
         self._active = None
+        # When the current network's address announcement began. Held in
+        # memory rather than on disk on purpose: a reboot on an unfamiliar
+        # network should start the window again, because a board that came
+        # back up somewhere new is exactly the case somebody is standing in
+        # front of wondering how to reach it.
+        self._announce_started = None
+        self._announce_print = None
 
     # ---------------------------------------------------------------- build
 
@@ -113,6 +120,61 @@ class Playlist:
             others = self._share_cap_across_leagues(others, room)
 
         return self._ordered_by_league(favourites + others)
+
+    def _address_screen(self):
+        """The address screen, when the board ought to be showing it.
+
+        Two reasons it is due, and they behave differently on purpose.
+
+        Setup not finished: show it and keep showing it. There is no timer,
+        because there is nothing else to show -- no teams, no ZIP code -- and
+        no way to know whether anyone has looked yet. It stops when the wizard
+        is completed, which is the only real evidence it was seen.
+
+        Setup finished but the network is unfamiliar: show it for a few
+        minutes and then stop. The board has moved house, or come up behind a
+        new router; somebody probably wants it, but the board is otherwise
+        working and should get back to being a scoreboard.
+        """
+        config = self.ctx.config
+        import time
+
+        port = int(config.get("web.port", 8080) or 8080)
+        setup_done = bool(config.get("setup.complete"))
+
+        if not setup_done:
+            return info_screens.AddressScreen(
+                self.ctx, netid.ip_address(), port)
+
+        minutes = float(config.get("setup.announce_minutes", 5) or 0)
+        if minutes <= 0:
+            return None
+
+        print_ = netid.fingerprint()
+        if not print_ or netid.already_announced(print_):
+            return None
+
+        # First run after this feature arrived: a board that is already set up
+        # and already working is, by definition, not on a network it needs
+        # introducing to. Record where it is and say nothing, so upgrading does
+        # not put an IP address on four living-room walls for five minutes.
+        if not netid.has_history():
+            netid.remember(print_, netid.ip_address())
+            return None
+
+        now = time.time()
+        if self._announce_print != print_:
+            self._announce_print = print_
+            self._announce_started = now
+
+        if now - self._announce_started < minutes * 60:
+            return info_screens.AddressScreen(
+                self.ctx, netid.ip_address(), port)
+
+        # Window over. Record it so this network never interrupts again, and
+        # so the decision survives a restart.
+        netid.remember(print_, netid.ip_address())
+        return None
 
     def _current_slate(self, games):
         """Drop leagues that are not playing today, keeping your teams.
@@ -312,6 +374,16 @@ class Playlist:
 
     def _build(self):
         config, store = self.ctx.config, self.ctx.store
+
+        # ---- rule 0: say where to find this board ----
+        #
+        # Ahead of everything, including a live favourite, because a board
+        # nobody can reach is a board whose scores do not matter yet. It ends
+        # the moment it stops being due.
+        address = self._address_screen()
+        if address is not None:
+            return [address]
+
         games = self._eligible_games()
 
         # ---- rule 1: camp on a live favourite ----

@@ -12,6 +12,8 @@
 #   ./scoreboard url         where to open the web UI
 #   ./scoreboard update      unpack a new zip over this install, keep config
 #   ./scoreboard selfupdate  check the release channel and install if newer
+#   ./scoreboard logos       which teams fall back to text, and why
+#   ./scoreboard tune ABBR   contact sheet for one team's logo
 #   ./scoreboard prepare     reset for handing to someone else
 
 set -uo pipefail
@@ -444,6 +446,12 @@ case "${1:-status}" in
            echo "Foreground mode, ctrl-C to stop"
            sudo python3 main.py "${@:2}" ;;
   selfupdate) shift; exec "$HERE/tools/selfupdate.sh" "$@" ;;
+  # Wrapped rather than left as a python -m incantation, because `python3 -m
+  # tools.logo_audit` only works from the project root and the natural place to
+  # type it is wherever you landed after ssh. This script already cds to its
+  # own directory, which is the whole reason it exists.
+  logos)   shift; exec python3 -m tools.logo_audit "$@" ;;
+  tune)    shift; exec python3 -m tools.logo_tune "$@" ;;
   doctor)  cmd_doctor ;;
   test)    python3 -m tools.test_scoreboard ;;
   data)    python3 -m tools.capture "${@:2}" ;;
