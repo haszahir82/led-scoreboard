@@ -1,11 +1,11 @@
 {
   "channels": {
     "beta": {
-      "notes": "v2.33.1",
-      "published": "2026-10-03T02:23:55Z",
-      "sha256": "e27b7746eeb55f7ab6839828013108284bf83f66c7fc4b7b04fd565d43f6ddf1",
-      "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.33.1/led-scoreboard-v2.33.1.zip",
-      "version": "2.33.1"
+      "notes": "v2.34.2",
+      "published": "2026-10-03T17:27:54Z",
+      "sha256": "7c49b103c22e5e7c7c3720464f4c41c6ceec83719853f4dbe3358decfa18e23f",
+      "url": "https://github.com/haszahir82/led-scoreboard/releases/download/v2.34.2/led-scoreboard-v2.34.2.zip",
+      "version": "2.34.2"
     },
     "stable": {
       "notes": "v2.33.1",
@@ -16,6 +16,6 @@
       "version": "2.33.1"
     }
   },
-  "published": "2026-10-03T02:24:40Z",
+  "published": "2026-10-03T17:27:54Z",
   "schema": 1
 }
