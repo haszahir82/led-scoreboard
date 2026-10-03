@@ -448,6 +448,168 @@ class TickerScreen(Screen):
             drawn += 1
 
 
+class TickerModeScreen(Screen):
+    """The whole panel as one continuously scrolling strip, ESPN-style.
+
+    Different from TickerScreen, which is one slot in the rotation with a
+    header and a fixed duration. This is the rotation: a single screen the
+    board never advances past, so the strip simply keeps moving.
+
+    Three things make that work, and all three are about the fact that the
+    playlist is rebuilt every time the data refreshes -- every twenty seconds
+    while games are live.
+
+    The key is a constant. The render loop restarts its clock whenever the
+    screen key changes, so a key that varied with the slate would yank the
+    strip back to the start on every refresh.
+
+    The playlist holds exactly one screen. The loop only advances when there
+    is more than one, so a single-item playlist scrolls forever on its own.
+
+    And the strip is drawn once into an image rather than composited per
+    frame. Pasting twenty logos and formatting twenty scores sixty times a
+    second is real work on one ARMv6 core; cropping a prepared image is not.
+    A long college Saturday is perhaps 2000 pixels wide, which is 190KB of
+    RGB -- nothing -- and the cost falls to one crop and one paste per frame.
+    """
+
+    kind = "info"
+    key = "ticker-mode"          # constant on purpose; see above
+    is_info = False              # it is the board, not an interlude
+    full_canvas = True           # one long strip, not one per panel
+
+    GAP = 10                     # blank pixels between games
+    LOGO = 16
+
+    def __init__(self, ctx, games, with_logos=True, canvas_height=None):
+        super().__init__(ctx)
+        self.games = list(games)
+        self.with_logos = with_logos
+        # The height to draw entries at. ctx.height is the CELL height, which
+        # is 32 whatever the board; on a panel stacked two rows deep the
+        # canvas is taller and the strip should fill it rather than paint a
+        # band across the top.
+        self.canvas_height = canvas_height or ctx.height
+        self._strip = None
+        self._signature = None
+
+    @property
+    def duration(self):
+        # Never voluntarily ends. The loop will not advance a one-item
+        # playlist anyway; this makes the intent explicit rather than
+        # depending on that.
+        return 10 ** 9
+
+    # ---------------------------------------------------------------- build
+
+    def _state_of(self, game):
+        """Does this game have scores yet, what to say about it, what colour.
+
+        Scores are returned per team rather than as one string, because a
+        ticker reads left to right and "OSU MICH 21 17" asks you to pair the
+        first name with the third number. Putting each score beside its own
+        team is what makes it readable while it is moving, which is why every
+        broadcast bug is laid out that way.
+        """
+        if game.live:
+            return (True, game.period_label or "LIVE", layout.GREEN)
+        if game.final:
+            return (True, "F", layout.WHITE)
+        local = self.to_local(game.start)
+        when = local.strftime("%-I:%M").lstrip("0") if local else "TBD"
+        return (False, when, layout.DIM)
+
+    def _entry_image(self, game):
+        """One game, drawn to its own image, logos and all."""
+        from PIL import Image, ImageDraw
+
+        scored, note, colour = self._state_of(game)
+        probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        spacing = 3
+        pieces = []
+
+        for team in (game.away, game.home):
+            if self.with_logos:
+                art = self.logo(team, size=self.LOGO, league=game.league)
+                if art is not None:
+                    pieces.append(("logo", art, self.LOGO))
+            label = team.short
+            pieces.append(("text", label,
+                           layout.text_width(probe, label, FONTS.small)))
+            if scored:
+                value = str(team.score)
+                pieces.append(("text", value,
+                               layout.text_width(probe, value, FONTS.small)))
+
+        pieces.append(("note", note, layout.text_width(probe, note, FONTS.tiny)))
+
+        width = sum(w for _, _, w in pieces) + spacing * (len(pieces) - 1)
+        img = Image.new("RGB", (max(1, width), self.canvas_height), (0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        x = 0
+        mid = self.canvas_height // 2
+        for kind, value, w in pieces:
+            if kind == "logo":
+                img.paste(value, (x, mid - self.LOGO // 2),
+                          value if value.mode == "RGBA" else None)
+            elif kind == "text":
+                draw.text((x, mid - 4), value, font=FONTS.small,
+                          fill=layout.WHITE)
+            else:
+                draw.text((x, mid - 3), value, font=FONTS.tiny, fill=colour)
+            x += w + spacing
+        return img
+
+    def _signature_of(self):
+        """What the strip depends on, so it is rebuilt only when it changes."""
+        return tuple(
+            (g.id, g.state, g.away.score, g.home.score, g.period_label)
+            for g in self.games)
+
+    def _build_strip(self):
+        from PIL import Image
+
+        entries = [self._entry_image(g) for g in self.games]
+        if not entries:
+            return None
+        total = sum(e.width + self.GAP for e in entries)
+        strip = Image.new("RGB", (total, self.canvas_height), (0, 0, 0))
+        x = 0
+        for entry in entries:
+            strip.paste(entry, (x, 0))
+            x += entry.width + self.GAP
+        return strip
+
+    def strip(self):
+        signature = self._signature_of()
+        if self._strip is None or signature != self._signature:
+            self._strip = self._build_strip()
+            self._signature = signature
+        return self._strip
+
+    # ---------------------------------------------------------------- draw
+
+    def draw(self, frame, elapsed):
+        strip = self.strip()
+        if strip is None:
+            frame.text_centered(12, "NO GAMES", FONTS.small, layout.DIM)
+            return
+
+        speed = float(self.ctx.config.get("display.ticker_speed", 22) or 22)
+        total = strip.width
+        offset = int(elapsed * speed) % total
+
+        # Paste the visible slice, wrapping round the join so the loop has no
+        # seam and no moment where the panel is half empty.
+        tall = strip.height
+        first = strip.crop((offset, 0, min(offset + frame.width, total), tall))
+        frame.paste(first, (0, 0))
+        if first.width < frame.width:
+            rest = strip.crop((0, 0, frame.width - first.width, tall))
+            frame.paste(rest, (first.width, 0))
+
+
 class AddressScreen(Screen):
     """Where to reach this board, for the minute somebody needs to know.
 

@@ -23,7 +23,7 @@ from renderer import geometry
 from renderer.display import Display, RenderContext, load_matrix
 from renderer.playlist import Playlist
 
-VERSION = "2.33.1"
+VERSION = "2.34.2"
 
 
 def parse_args():

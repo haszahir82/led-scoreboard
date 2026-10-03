@@ -43,6 +43,22 @@ DEFAULTS = {
         # means no self-update: the board checks nothing and installs nothing.
         "manifest_url": "",
     },
+    "display_mode": {
+        # "rotate" switches between full-screen cards, which is the default
+        # and what the board has always done. "ticker" turns the whole panel
+        # into one continuously scrolling strip, the way the bug along the
+        # bottom of a sports broadcast works.
+        "mode": "rotate",
+        # Pixels per second the strip moves. 22 is a readable walking pace on
+        # a 64-wide panel; much faster and a score is gone before you have
+        # focused on it.
+        "ticker_speed": 22,
+        # Team logos inline. "auto" draws them everywhere except a single-core
+        # Zero W, where the strip is rebuilt often enough that compositing
+        # twenty logos is worth avoiding; True and False force it either way.
+        "ticker_logos": "auto",
+    },
+
     "rotation": {
         "enabled": True,
         # Only leagues playing today are in the rotation. Turn off for a board

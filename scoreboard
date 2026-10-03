@@ -76,6 +76,11 @@ print("  data {}, {:.0f}s old".format(
     "online" if d.get("online") else "OFFLINE", d.get("stale_seconds", 0)))
 if d.get("slate"):
     print("  current slate: {}".format(d["slate"]))
+if d.get("board_style"):
+    style = "scrolling ticker" if d["board_style"] == "ticker" else "switching cards"
+    print("  board style: {}".format(style))
+if d.get("current_screen"):
+    print("  showing screen: {}".format(d["current_screen"]))
 u = d.get("update") or {}
 if d.get("version"):
     line = "  version {}".format(d["version"])
@@ -90,8 +95,6 @@ if u.get("result"):
         age = " {:.0f}h ago".format(hours) if hours >= 1 else " just now"
     print("  last update check:{} {} - {}".format(
         age, u["result"], u.get("detail", "")))
-if d.get("current_screen"):
-    print("  showing: {}".format(d["current_screen"]))
 for g in d.get("games", [])[:5]:
     star = "*" if g.get("favorite") else " "
     print("   {} {} {} - {} {}  {}".format(

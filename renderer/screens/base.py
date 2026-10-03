@@ -63,6 +63,13 @@ class Screen:
     key = "screen"         # stable identity, used to avoid restarting a screen
     is_info = True         # False for game screens; drives the rotation mix
 
+    # Almost every screen is a 64x32 card and the display tiles several of
+    # them across a chained panel. A screen that sets this instead gets the
+    # whole canvas as one frame -- 128x32 on a two-panel board -- because
+    # tiling it would mean drawing the same thing twice side by side, which
+    # for a ticker is two copies of one strip rather than one long one.
+    full_canvas = False
+
     def __init__(self, ctx):
         self.ctx = ctx     # RenderContext: config, store, panel size
 

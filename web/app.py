@@ -138,6 +138,11 @@ def create_app(config, store):
                 "favorites": sum(1 for g in games if g.is_favorite),
             },
             "version": _version(),
+            # Which of the two board styles is actually running. "the ticker
+            # is not working" is otherwise unanswerable without reading the
+            # config by hand, and the two tickers in this project have
+            # different screen keys that nobody should have to memorise.
+            "board_style": str(config.get("display_mode.mode", "rotate")),
             "update": _update_state(),
             "current_screen": display_mod.LATEST.get("key"),
             # Which day's games the rotation is treating as current, and which

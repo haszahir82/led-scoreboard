@@ -218,7 +218,14 @@ class Display:
         elapsed = time.time() - self._screen_started
 
         geo = self.geometry
-        if geo is None or geo.single:
+        if geo is not None and not geo.single \
+                and getattr(screen, "full_canvas", False):
+            # One frame the size of the whole chain. Tiling this screen would
+            # hand it each 64-wide cell in turn, and a ticker drawn that way
+            # is the same strip twice rather than one strip twice as long.
+            frame = Frame(geo.width, geo.height)
+            screen.draw(frame, elapsed)
+        elif geo is None or geo.single:
             frame = Frame(self.ctx.width, self.ctx.height)
             screen.draw(frame, elapsed)
         else:

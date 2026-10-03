@@ -138,11 +138,21 @@
 
   <section>
     <h2>Rotation</h2>
-    <div class="row">
+    <div class="row"><label>Board style<span class="hint">How the whole panel behaves. Ticker never stops and never switches</span></label>
+      <select data-path="display_mode.mode" id="boardStyle">
+        <option value="rotate">Switching cards</option>
+        <option value="ticker">Scrolling ticker (whole board)</option>
+      </select></div>
+    <div class="row"><label>Ticker speed<span class="hint">Pixels per second. 22 is a readable pace</span></label>
+      <input type="number" min="6" max="80" step="1" data-path="display_mode.ticker_speed"></div>
+    <div class="row" id="tickerNote" style="display:none">
+      <label><span class="hint">Ticker mode: the rotation settings
+      below are inactive</span></label></div>
+    <div class="row" data-rotation-only>
       <label>Rotate through games<span class="hint">Off pins the first game</span></label>
       <span class="switch"><input type="checkbox" data-path="rotation.enabled"><span></span></span>
     </div>
-    <div class="row">
+    <div class="row" data-rotation-only>
       <label>Favorites only<span class="hint">Hide everyone else</span></label>
       <span class="switch"><input type="checkbox" data-path="rotation.favorites_only"><span></span></span>
     </div>
@@ -152,7 +162,7 @@
     </div>
     <div class="row"><label>My teams on their off day<span class="hint">3 means your team's last result comes round every third pass</span></label>
       <input type="number" min="1" max="10" step="1" data-path="rotation.offday_favorite_every"></div>
-    <div class="row">
+    <div class="row" data-rotation-only>
       <label>Stay on my live game<span class="hint">Stop rotating while a favorite plays</span></label>
       <span class="switch"><input type="checkbox" data-path="rotation.stay_on_live_favorite"><span></span></span>
     </div>
@@ -209,7 +219,7 @@
       <span class="switch"><input type="checkbox" data-path="screens.leaders"><span></span></span></div>
     <div class="row"><label>My team card</label>
       <span class="switch"><input type="checkbox" data-path="screens.team_summary"><span></span></span></div>
-    <div class="row"><label>Scrolling ticker</label>
+    <div class="row" id="tickerSlotRow"><label>Scores ticker<span class="hint">One screen in the rotation that scrolls every score. Not the same as Board style above, which turns the whole panel into a ticker</span></label>
       <span class="switch"><input type="checkbox" data-path="screens.ticker"><span></span></span></div>
     <div class="row"><label>Clock</label>
       <span class="switch"><input type="checkbox" data-path="screens.clock"><span></span></span></div>
@@ -386,6 +396,7 @@ async function load() {
   const city = get(CONFIG, 'location.city');
   if (city) $('#zipHint').textContent = city + ', ' + (get(CONFIG, 'location.state') || '');
   updateTileHint();
+  updateModeVisibility();
   loadHardware();
   loadFantasy();
 }
@@ -445,6 +456,23 @@ async function loadHardware() {
 
 // Show the resulting canvas and cell count, so "chain 2" reads as a concrete
 // outcome rather than a number whose effect you have to guess at.
+// In ticker mode the rotation settings describe something that is not
+// happening: there is one screen, it never advances, and the individual
+// screen toggles have nothing to switch between. Leaving them live is how
+// somebody ends up flipping "Scores ticker" expecting the board style and
+// getting one extra screen in a rotation they thought they had turned off.
+function updateModeVisibility() {
+  const sel = $('#boardStyle');
+  if (!sel) return;
+  const ticker = sel.value === 'ticker';
+  document.querySelectorAll('[data-rotation-only]').forEach(el => {
+    el.style.opacity = ticker ? 0.35 : 1;
+    el.style.pointerEvents = ticker ? 'none' : 'auto';
+  });
+  const note = $('#tickerNote');
+  if (note) note.style.display = ticker ? 'block' : 'none';
+}
+
 function updateTileHint() {
   const m = CONFIG.matrix || {};
   const cols = +m.cols || 64, rows = +m.rows || 32;
@@ -558,6 +586,7 @@ function bindFields() {
       else if (el.type === 'number' || el.type === 'range') v = parseFloat(el.value);
       else v = el.value;
       set(CONFIG, path, v);
+      if (path === 'display_mode.mode') updateModeVisibility();
     };
   });
 }

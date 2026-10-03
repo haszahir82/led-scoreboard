@@ -916,6 +916,12 @@ def main():
     test_privilege_drop_readability()
     test_audio_conflict()
     test_apt_resilience()
+    test_no_two_controls_are_called_the_same_thing()
+    test_ticker_mode_is_one_screen_that_never_stops()
+    test_ticker_scrolls_and_wraps_without_a_gap()
+    test_ticker_pairs_each_score_with_its_own_team()
+    test_setup_address_still_beats_the_ticker()
+    test_ticker_spans_the_whole_chain()
     test_settings_rows_cannot_collapse_their_labels()
     test_board_announces_its_address_on_a_new_network()
     test_address_fits_the_panel_at_every_plausible_ip()
@@ -1653,6 +1659,368 @@ def test_apt_resilience():
           "key-joeisanerd" not in src)
     check("the sources entry is not written when the key step failed",
           "could not add the Comitup repository" in src)
+
+
+def test_no_two_controls_are_called_the_same_thing():
+    """Two settings with one name is a bug report waiting to happen.
+
+    It already happened. The board-style dropdown gained an option called
+    "Scrolling ticker" while a checkbox called "Scrolling ticker" had been
+    sitting in the screens list for months -- that one adds the old one-slot
+    ticker to the info rotation. Flipping the switch instead of changing the
+    dropdown gives you an extra screen in a rotation you thought you had
+    replaced, so the panel shows the clock and the ticker appears broken.
+
+    Both names were accurate. That is exactly why nobody notices while
+    writing them, and why this is a test rather than a thing to remember.
+    """
+    print("no two controls share a name")
+    import re
+
+    ui = open(os.path.join(root_dir(), "web", "templates", "index.html")).read()
+
+    # Static rows only. The per-league blocks are generated in JS and repeat
+    # by design, once under each league's own heading.
+    labels = [" ".join(m.group(1).split()) for m in
+              re.finditer(r'<div class="row"[^>]*>\s*<label[^>]*>([^<]+)', ui)]
+    options = [" ".join(m.group(1).split()) for m in
+               re.finditer(r"<option[^>]*>([^<]+)</option>", ui)]
+
+    check("there are controls to check", len(labels) > 20, str(len(labels)))
+
+    dupes = sorted({n for n in labels if labels.count(n) > 1})
+    check("no two settings share a label", not dupes, ", ".join(dupes))
+
+    # An option reading the same as some other control's label is the exact
+    # shape of the bug: you go looking for "Scrolling ticker" and find the
+    # wrong one. The same word appearing as an option in two different
+    # dropdowns is fine -- "Auto" means auto in both.
+    clash = sorted(set(options) & set(labels))
+    check("no dropdown option is named after a different setting",
+          not clash, ", ".join(clash))
+
+    # And the specific pair, named, so the fix cannot be undone by accident.
+    check("the rotation-slot ticker is distinguishable from the board style",
+          "Scores ticker" in ui and "Scrolling ticker (whole board)" in ui)
+    check("the slot toggle says what it is not",
+          "Not the same as Board style" in ui)
+
+
+def test_ticker_mode_is_one_screen_that_never_stops():
+    """A ticker that restarts every twenty seconds is not a ticker.
+
+    The playlist is rebuilt on every data refresh, and three separate things
+    have to hold or the strip snaps back to the beginning each time:
+
+      the screen key is constant, because the render loop restarts its clock
+      whenever the key changes;
+
+      the playlist holds exactly one screen, because the loop only advances
+      when there is more than one;
+
+      and the strip is cached against the scores rather than rebuilt per
+      frame, because recompositing twenty logos sixty times a second is real
+      work on one ARMv6 core.
+
+    Each is invisible when correct and obvious when broken, which is exactly
+    the kind of thing that rots.
+    """
+    print("ticker mode is one screen that never stops")
+    from renderer.playlist import Playlist
+    from renderer.screens.info import TickerModeScreen
+
+    ctx, games = build_context()
+    ctx.config.set("display_mode.mode", "ticker")
+    try:
+        pl = Playlist(ctx)
+        pl.maybe_rebuild(force=True)
+
+        check("ticker mode is a single screen", len(pl.screens) == 1,
+              str(len(pl.screens)))
+        screen = pl.screens[0]
+        check("and it is the ticker",
+              isinstance(screen, TickerModeScreen))
+        check("the loop will not advance a one-item playlist",
+              len(pl) == 1)
+
+        # The key must not vary with the slate, or every refresh resets the
+        # scroll. Rebuild with different data and compare.
+        before = screen.key
+        pl.maybe_rebuild(force=True)
+        check("the key survives a rebuild", pl.screens[0].key == before,
+              "a changing key restarts the render loop's clock")
+        check("the key is a constant, not derived from the games",
+              TickerModeScreen.key == before)
+
+        check("it never asks to be advanced past",
+              screen.duration > 10 ** 6, str(screen.duration))
+
+        # The strip is the expensive part; it must be built once per data
+        # change, not once per frame.
+        first = screen.strip()
+        check("the strip is built", first is not None)
+        check("and reused while the scores are unchanged",
+              screen.strip() is first)
+        if screen.games:
+            screen.games[0].away.score += 1
+            check("but rebuilt when a score changes",
+                  screen.strip() is not first)
+    finally:
+        ctx.config.set("display_mode.mode", "rotate")
+
+
+def test_ticker_scrolls_and_wraps_without_a_gap():
+    """It has to move, and the join has to be invisible.
+
+    The wrap is the part worth testing. Pasting one slice leaves the panel
+    half black for as many frames as the strip is short of a full width, and
+    on a 64-pixel panel that is a visible stutter once per loop.
+    """
+    print("ticker scrolls and wraps")
+    from renderer.screens.info import TickerModeScreen
+    from tools.screenshots import render
+
+    ctx, games = build_context()
+    screen = TickerModeScreen(ctx, games[:6], with_logos=True)
+    strip = screen.strip()
+    check("there is a strip to scroll", strip is not None and strip.width > 64)
+    if strip is None:
+        return
+
+    def frame_at(t):
+        return render(screen, t)
+
+    a, b = frame_at(0.0), frame_at(1.0)
+    check("the strip actually moves", a.tobytes() != b.tobytes())
+
+    speed = float(ctx.config.get("display_mode.ticker_speed", 22) or 22)
+    wrap = strip.width / speed
+
+    # Across the join, every frame must still be fully painted. "Fully
+    # painted" here means no entirely-black column band at the right edge,
+    # which is what a missing second slice looks like.
+    for delta in (-0.4, -0.2, 0.0, 0.2, 0.4):
+        img = frame_at(max(0.0, wrap + delta))
+        right = img.crop((img.width - 8, 0, img.width, img.height))
+        left = img.crop((0, 0, 8, img.height))
+        check("painted across the join at {:+.1f}s".format(delta),
+              right.convert("L").getextrema()[1] > 0
+              or left.convert("L").getextrema()[1] > 0,
+              "a dark slab at the seam means the wrap slice is missing")
+
+    # A ticker with nothing in it must say so rather than render an empty bar.
+    empty = TickerModeScreen(ctx, [], with_logos=False)
+    blank = render(empty, 0.5)
+    check("an empty slate says so", blank.convert("L").getextrema()[1] > 60)
+
+
+def test_ticker_pairs_each_score_with_its_own_team():
+    """"OSU MICH 21 17" makes you pair the first name with the third number.
+
+    The first version did exactly that -- both teams, then both scores -- and
+    it reads as a jumble in something moving past you. ESPN puts each score
+    beside its own team, and the reason is legibility under motion rather
+    than taste.
+    """
+    print("ticker pairs scores with teams")
+    from renderer.screens.info import TickerModeScreen
+
+    src = open(os.path.join(root_dir(), "renderer", "screens",
+                            "info.py")).read()
+    block = src[src.index("class TickerModeScreen"):src.index("class AddressScreen")]
+    # Whitespace-normalised, because whether a sentence happens to wrap
+    # between two words is not a fact about the code and a check that cares
+    # fails for no reason the next time the comment is reflowed.
+    import re as _re
+    flat = _re.sub(r"\s+", " ", block)
+    check("entries are built by walking the two teams",
+          "for team in (game.away, game.home)" in block)
+    check("each team's own score is appended next to it",
+          "str(team.score)" in block)
+    check("the reason is written down",
+          "beside its own team" in flat or "next to its own team" in flat)
+
+    # Logos cost CPU, and the board that cannot spare it is the Zero W.
+    ctx, games = build_context()
+    from renderer.playlist import Playlist
+    for profile, expected in (("zero_w", False), ("pi3", True)):
+        ctx.config.set("performance.profile", profile)
+        ctx.config.set("display_mode.ticker_logos", "auto")
+        check("{} decides logos: {}".format(profile, expected),
+              Playlist(ctx)._ticker_logos() is expected)
+    ctx.config.set("display_mode.ticker_logos", True)
+    ctx.config.set("performance.profile", "zero_w")
+    check("an explicit setting overrides the hardware guess",
+          Playlist(ctx)._ticker_logos() is True)
+    ctx.config.set("performance.profile", "auto")
+    ctx.config.set("display_mode.ticker_logos", "auto")
+
+    ui = open(os.path.join(root_dir(), "web", "templates", "index.html")).read()
+    check("the mode is switchable from the settings page",
+          'data-path="display_mode.mode"' in ui)
+    check("so is the speed", 'data-path="display_mode.ticker_speed"' in ui)
+
+
+def test_setup_address_still_beats_the_ticker():
+    """Ticker mode must not hide the one screen somebody needs to get in.
+
+    A board in ticker mode that has never been set up would otherwise scroll
+    scores at a person who has no way to reach its settings page.
+    """
+    print("address still beats the ticker")
+    import tempfile
+    from data import netid
+    from renderer.playlist import Playlist
+
+    ctx, _ = build_context()
+    tmp = tempfile.mkdtemp()
+    real = (netid.SEEN_PATH, netid.STATE_DIR, netid.ip_address, netid.wifi_ssid)
+    try:
+        netid.SEEN_PATH = os.path.join(tmp, "seen.json")
+        netid.STATE_DIR = tmp
+        netid.ip_address = lambda: "192.168.1.45"
+        netid.wifi_ssid = lambda: "SomeWifi"
+
+        ctx.config.set("display_mode.mode", "ticker")
+        ctx.config.set("setup.complete", False)
+        pl = Playlist(ctx)
+        pl.maybe_rebuild(force=True)
+        check("an unconfigured board shows the address, not the ticker",
+              type(pl.screens[0]).__name__ == "AddressScreen")
+
+        ctx.config.set("setup.complete", True)
+        ctx.config.set("setup.announce_minutes", 0)
+        pl = Playlist(ctx)
+        pl.maybe_rebuild(force=True)
+        check("and once it is set up the ticker takes over",
+              type(pl.screens[0]).__name__ == "TickerModeScreen")
+    finally:
+        netid.SEEN_PATH, netid.STATE_DIR, netid.ip_address, netid.wifi_ssid = real
+        ctx.config.set("display_mode.mode", "rotate")
+        ctx.config.set("setup.complete", True)
+
+
+def test_ticker_spans_the_whole_chain():
+    """Two panels is one ticker twice as long, not two tickers.
+
+    Every other screen in this project is a 64x32 card, and the display
+    tiles several of them across a chained panel. A ticker is the one thing
+    that is not a card: it is a single strip that has to cross the seam, so
+    the tiled path hands it each cell in turn and the board shows the same
+    few inches of strip twice, side by side, scrolling in lockstep. That is
+    what it looked like in the field.
+
+    The fix is a flag a screen can set to ask for the whole canvas, and the
+    checks below pin all four parts of it, because three of them are silent
+    when wrong: the flag, the display branch that honours it ahead of
+    tiling, the strip being built to the canvas height rather than the cell
+    height, and -- the actual symptom -- the two halves of a 128-wide frame
+    differing from each other.
+    """
+    print("ticker spans the whole chain")
+    from renderer.geometry import Geometry
+    from renderer.display import CaptureMatrix, Display, RenderContext
+    from renderer.screens.base import Screen
+    from renderer.screens.info import TickerModeScreen
+
+    check("a screen gets a cell unless it asks otherwise",
+          Screen.full_canvas is False)
+    check("the ticker asks for the whole canvas",
+          TickerModeScreen.full_canvas is True)
+
+    base, _ = build_context()
+    base.config.set("display_mode.mode", "ticker")
+    base.config.set("display_mode.ticker_logos", False)   # fast, deterministic
+    try:
+        # ---- the symptom: one strip across 128px, not two copies of one ---
+        geo = Geometry(chain_length=2)
+        ctx = RenderContext(base.config, base.store, geo.cell_width,
+                            geo.cell_height, geometry=geo)
+        playlist = Playlist(ctx)
+        playlist.maybe_rebuild(force=True)
+        screen = playlist.current()
+        check("ticker mode is running", isinstance(screen, TickerModeScreen))
+
+        matrix = CaptureMatrix(geo.width, geo.height)
+        Display(matrix, ctx, playlist, geometry=geo).tick()
+        image = matrix.frames[-1]
+        check("the frame is the whole chain wide", image.size == (128, 32),
+              str(image.size))
+
+        left = image.crop((0, 0, 64, 32))
+        right = image.crop((64, 0, 128, 32))
+        check("both halves are painted",
+              left.getbbox() is not None and right.getbbox() is not None)
+        check("and they are not the same 64 pixels twice",
+              left.tobytes() != right.tobytes(),
+              "identical halves is the tiled bug: one strip drawn per cell")
+
+        # The seam itself: the strip is continuous, so the frame must equal a
+        # straight 128-wide slice of it rather than a slice repeated.
+        strip = screen.strip()
+        check("the strip is longer than one panel",
+              strip is not None and strip.width > 128,
+              "" if strip is None else str(strip.size))
+
+        # ---- the cell height is not the canvas height -------------------
+        tall = Geometry(chain_length=2, parallel=2)       # 128x64, 4 cells
+        tctx = RenderContext(base.config, base.store, tall.cell_width,
+                             tall.cell_height, geometry=tall)
+        tpl = Playlist(tctx)
+        tpl.maybe_rebuild(force=True)
+        tscreen = tpl.current()
+        check("the ticker is told how tall the canvas is",
+              tscreen.canvas_height == 64,
+              "{} (ctx.height is the 32px cell)".format(tscreen.canvas_height))
+        tstrip = tscreen.strip()
+        check("so the strip fills the panel instead of banding the top",
+              tstrip is not None and tstrip.height == 64,
+              "" if tstrip is None else str(tstrip.size))
+
+        tmatrix = CaptureMatrix(tall.width, tall.height)
+        Display(tmatrix, tctx, tpl, geometry=tall).tick()
+        check("a stacked panel renders full size",
+              tmatrix.frames[-1].size == (128, 64),
+              str(tmatrix.frames[-1].size))
+
+        # ---- a single panel is unchanged --------------------------------
+        one = Geometry()
+        octx = RenderContext(base.config, base.store, one.cell_width,
+                             one.cell_height, geometry=one)
+        opl = Playlist(octx)
+        opl.maybe_rebuild(force=True)
+        omatrix = CaptureMatrix(one.width, one.height)
+        Display(omatrix, octx, opl, geometry=one).tick()
+        check("one panel still renders 64x32",
+              omatrix.frames[-1].size == (64, 32),
+              str(omatrix.frames[-1].size))
+    finally:
+        base.config.set("display_mode.mode", "rotate")
+        base.config.set("display_mode.ticker_logos", "auto")
+
+    # ---- and ordinary screens still tile ------------------------------
+    # The new branch sits in front of the tiled one, so it is exactly the
+    # kind of edit that quietly takes over every screen.
+    geo = Geometry(chain_length=2)
+    ctx = RenderContext(base.config, base.store, geo.cell_width,
+                        geo.cell_height, geometry=geo)
+    ctx.config.set("rotation.stay_on_live_favorite", False)
+    playlist = Playlist(ctx)
+    playlist.maybe_rebuild(force=True)
+    check("a rotating board is not full-canvas",
+          not getattr(playlist.current(), "full_canvas", False))
+    matrix = CaptureMatrix(geo.width, geo.height)
+    Display(matrix, ctx, playlist, geometry=geo).tick()
+    image = matrix.frames[-1]
+    check("and is still drawn cell by cell",
+          image.crop((0, 0, 64, 32)).tobytes()
+          != image.crop((64, 0, 128, 32)).tobytes())
+
+    src = open(os.path.join(root_dir(), "renderer", "display.py")).read()
+    tick = src[src.index("    def tick(self):"):src.index("    def _draw_tiled")]
+    check("the full-canvas branch is checked before tiling",
+          tick.index("full_canvas") < tick.index("_draw_tiled"),
+          "tiling first means the flag never gets looked at")
 
 
 def test_settings_rows_cannot_collapse_their_labels():

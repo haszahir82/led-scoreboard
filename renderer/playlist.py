@@ -121,6 +121,27 @@ class Playlist:
 
         return self._ordered_by_league(favourites + others)
 
+    def _ticker_mode(self):
+        return str(self.ctx.config.get("display_mode.mode", "rotate")).lower() \
+            == "ticker"
+
+    def _ticker_logos(self):
+        """Whether to composite logos into the strip on this board.
+
+        "auto" means everywhere except a single-core Zero W. The strip is
+        rebuilt whenever a score changes, and on that board rebuilding it with
+        twenty logos competes with the refresh thread for the only core there
+        is -- which shows up as the panel dimming, not as a slow ticker.
+        """
+        setting = self.ctx.config.get("display_mode.ticker_logos", "auto")
+        if isinstance(setting, bool):
+            return setting
+        if str(setting).lower() in ("true", "yes", "on"):
+            return True
+        if str(setting).lower() in ("false", "no", "off"):
+            return False
+        return hardware.board_for(self.ctx.config).profile.key != "zero_w"
+
     def _address_screen(self):
         """The address screen, when the board ought to be showing it.
 
@@ -385,6 +406,20 @@ class Playlist:
             return [address]
 
         games = self._eligible_games()
+
+        # ---- rule 0.5: the ticker is the whole board ----
+        #
+        # Deliberately after the slate filtering and before every rotation
+        # rule, because in ticker mode those rules have nothing to act on:
+        # there is one screen, it never advances, and camping on a game would
+        # mean stopping the strip, which is the one thing a ticker must not
+        # do. The filters still apply, so the ticker and the rotation show the
+        # same slate presented differently.
+        if self._ticker_mode():
+            geo = getattr(self.ctx, "geometry", None)
+            return [info_screens.TickerModeScreen(
+                self.ctx, games, with_logos=self._ticker_logos(),
+                canvas_height=geo.height if geo is not None else None)]
 
         # ---- rule 1: camp on a live favourite ----
         #

@@ -1569,6 +1569,60 @@ git push
             <td>Pi is on UTC. <code>sudo timedatectl set-timezone America/New_York</code>.</td>
           </tr>
           <tr>
+            <td>You turned the ticker on and the board just shows the clock</td>
+            <td>You almost certainly flipped the wrong switch, and that was my
+            naming. Until <b>v2.34.1</b> there were two controls reading
+            <i>Scrolling ticker</i>: the <b>Board style</b> dropdown, which is
+            the whole-board mode, and a checkbox in the screens list, which
+            adds the <i>old</i> one-slot ticker to the info rotation. Flipping
+            the checkbox gives you one more screen in a rotation you thought
+            you had replaced, so on a thin slate the board cycles info screens
+            and mostly shows the clock. The checkbox is now <i>Scores
+            ticker</i> and says what it is not; the dropdown option says
+            <i>whole board</i>; and in ticker mode the rotation settings grey
+            out, because they describe something that is not happening.
+            <code>./scoreboard status</code> now prints the board style and
+            the screen actually on the panel &mdash; <code>ticker-mode</code>
+            is the whole-board ticker, <code>ticker</code> is the rotation
+            slot, and <code>clock</code> means neither is running.</td>
+          </tr>
+          <tr>
+            <td>The ticker runs twice side by side on a two-panel board</td>
+            <td>Fixed in <b>v2.34.2</b>. Every other screen here is a 64&times;32
+            card and the display tiles several of them across a chained panel,
+            which is how two panels show two different games at once. A ticker
+            is the one screen that is not a card &mdash; it is a single strip
+            that has to cross the seam &mdash; so the tiling path handed it
+            each 64-pixel cell in turn and both halves scrolled the same few
+            inches of strip in lockstep. A screen can now ask for the whole
+            canvas instead of a cell, and the ticker is the only thing that
+            does; on a 128-wide board it gets one 128-wide frame and the strip
+            runs straight across. On a panel stacked two rows deep the strip
+            now fills the full height rather than painting a band across the
+            top. Nothing changes on a single panel, and the switching-cards
+            mode still tiles exactly as before.</td>
+          </tr>
+          <tr>
+            <td>You want the ESPN bottom-line look instead of switching cards</td>
+            <td><b>v2.34</b> adds a ticker mode: set <i>Board style</i> to
+            <b>Scrolling ticker</b> in the web page and the whole panel
+            becomes one continuously moving strip, each game as a team logo,
+            its score, the other logo, its score, then the period or kickoff
+            time. It carries exactly the same slate the rotation would &mdash;
+            today&rsquo;s leagues, the Top 25 rules, the game cap &mdash; so
+            the two modes are the same board presented differently rather than
+            two sets of settings. <i>Ticker speed</i> is pixels per second and
+            defaults to 22, which is a readable walking pace on a 64-wide
+            panel. Logos are drawn everywhere except a single-core Zero W,
+            where compositing them competes with the panel refresh for the
+            only core there is; <code>display_mode.ticker_logos</code> forces
+            it either way. Camping on a live favourite does not apply in this
+            mode, because stopping is the one thing a ticker must not do
+            &mdash; your game scrolls past with the rest. The setup address
+            screen still wins over everything, so a board nobody can reach
+            never hides that behind scrolling scores.</td>
+          </tr>
+          <tr>
             <td>Someone cannot find the board&rsquo;s web page</td>
             <td>Look at the panel. From <b>v2.33</b> a board that has never
             completed setup displays its own address full-screen, and a board
